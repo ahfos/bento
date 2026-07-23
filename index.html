@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="description" content="Drop images, get an instant bento grid. Nothing you upload ever leaves your browser.">
+<title>BENTO — instant image grids</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='11' height='11' x='1' y='1' rx='1.5' fill='%23000'/%3E%3Crect width='11' height='11' x='1' y='12' rx='1.5' fill='%23c41e24'/%3E%3Crect width='11' height='11' x='12' y='1' rx='1.5' fill='%23c41e24'/%3E%3Crect width='11' height='11' x='12' y='12' rx='1.5' fill='%23000'/%3E%3C/svg%3E">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+
+  :root {
+    --bg: #ffffff;
+    --fg: #000000;
+    --border: #cccccc;
+    --border-subtle: #e5e5e5;
+    --accent: #c41e24;
+    --muted: #888888;
+    --ui-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono-font: "SF Mono", "Menlo", "Consolas", monospace;
+    --transition-fast: 180ms ease-out;
+    --gap: 10px;
+    --row-h: 130px;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--ui-font);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100%;
+  }
+
+  a { color: inherit; }
+
+  button {
+    font-family: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .eyebrow {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ---------- layout shell ---------- */
+  .app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.1rem 1.5rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .logo svg { height: 22px; width: auto; display: block; }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .btn {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    transition: background var(--transition-fast), color var(--transition-fast), opacity var(--transition-fast);
+  }
+
+  .btn:hover { background: #f2f2f2; }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+  .btn:disabled:hover { background: none; }
+
+  .btn-primary {
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .btn-primary:hover { background: #222; }
+
+  .btn-accent {
+    color: var(--accent);
+  }
+  .btn-accent:hover { background: #c41e2412; }
+
+  .btn-ghost { color: var(--muted); }
+
+  /* ---------- empty state ---------- */
+  .empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+  }
+
+  .empty-inner {
+    text-align: center;
+    max-width: 26rem;
+    width: 100%;
+  }
+
+  .empty-mark svg { height: 3.4rem; width: auto; margin: 0 auto 1.75rem; display: block; }
+
+  .dropzone {
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    padding: 2.75rem 1.5rem;
+    cursor: pointer;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+
+  .dropzone:hover, .dropzone.drag-over {
+    border-color: var(--accent);
+    background: #c41e2408;
+  }
+
+  .dropzone h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+  }
+
+  .dropzone p {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .empty-note {
+    margin-top: 1.5rem;
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* ---------- toolbar (populated state) ---------- */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.85rem 1.5rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+  }
+
+  .count {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ---------- grid ---------- */
+  .grid-wrap {
+    flex: 1;
+    padding: 1.25rem 1.5rem 2.5rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-auto-flow: dense;
+    grid-auto-rows: var(--row-h);
+    gap: var(--gap);
+  }
+
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .tile {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #f2f2f2;
+    grid-column: span 1;
+    grid-row: span 1;
+  }
+
+  .tile[data-type="hero"]   { grid-column: span 2; grid-row: span 2; }
+  .tile[data-type="wide"]   { grid-column: span 2; grid-row: span 1; }
+  .tile[data-type="tall"]   { grid-column: span 1; grid-row: span 2; }
+  .tile[data-type="standard"] { grid-column: span 1; grid-row: span 1; }
+
+  @media (max-width: 640px) {
+    .tile[data-type="hero"] { grid-column: span 2; grid-row: span 1; }
+    .tile[data-type="wide"] { grid-column: span 2; grid-row: span 1; }
+    .tile[data-type="tall"] { grid-column: span 1; grid-row: span 2; }
+  }
+
+  .tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .tile.dragging { opacity: 0.35; }
+  .tile.drop-target::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--accent);
+    border-radius: 10px;
+    pointer-events: none;
+  }
+
+  .tile-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0.5rem;
+    opacity: 0;
+    background: linear-gradient(180deg, #00000055 0%, transparent 28%, transparent 72%, #00000055 100%);
+    transition: opacity var(--transition-fast);
+  }
+
+  .tile:hover .tile-overlay,
+  .tile:focus-within .tile-overlay { opacity: 1; }
+
+  .tile-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    padding: 0 0.55rem;
+    border-radius: 6px;
+    background: #ffffffee;
+    color: var(--fg);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    border: 1px solid transparent;
+  }
+  .chip:hover { background: #ffffff; }
+  .chip.is-locked { border-color: var(--accent); color: var(--accent); }
+
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: #ffffffee;
+    color: var(--fg);
+    transition: background var(--transition-fast);
+  }
+  .icon-btn:hover { background: #ffffff; }
+  .icon-btn.remove:hover { color: var(--accent); }
+  .icon-btn svg { width: 14px; height: 14px; }
+
+  .drag-handle {
+    cursor: grab;
+    touch-action: none;
+  }
+  .drag-handle:active { cursor: grabbing; }
+
+  /* ---------- footer ---------- */
+  footer {
+    padding: 1.25rem 1.5rem 1.75rem;
+    text-align: center;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .footer-note {
+    font-size: 0.68rem;
+    color: var(--muted);
+    line-height: 1.6;
+    max-width: 34rem;
+    margin: 0 auto 0.6rem;
+  }
+
+  .footer-credit {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .footer-credit:hover { color: var(--fg); }
+
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 1.5rem;
+    transform: translate(-50%, 8px);
+    background: var(--fg);
+    color: var(--bg);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="logo" aria-label="BENTO">
+      <svg viewBox="0 0 212 401" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+        <path d="M38.689 48.3243H65.2758C69.9577 48.3243 73.8036 47.2096 76.8134 44.9801C79.8232 42.7506 81.3281 39.1276 81.3281 34.1113C81.3281 31.3244 80.8265 29.0392 79.8232 27.2556C78.8199 25.472 77.4822 24.0786 75.8101 23.0753C74.138 22.072 72.1872 21.4032 69.9577 21.0687C67.8397 20.6228 65.6102 20.3999 63.2692 20.3999H38.689V48.3243ZM12.4367 0H68.62C74.3052 0 79.4888 0.501637 84.1707 1.50491C88.8527 2.50818 92.8658 4.18031 96.21 6.52128C99.5542 8.75077 102.118 11.7606 103.902 15.5507C105.797 19.3409 106.744 24.0228 106.744 29.5966C106.744 35.6162 105.351 40.6326 102.564 44.6456C99.8887 48.6587 95.8756 51.9472 90.5248 54.5112C97.8821 56.6292 103.344 60.3636 106.912 65.7144C110.59 70.9537 112.43 77.3078 112.43 84.7766C112.43 90.7962 111.259 96.0355 108.918 100.495C106.577 104.842 103.4 108.409 99.387 111.196C95.4854 113.983 90.9707 116.045 85.8428 117.383C80.8265 118.721 75.6429 119.389 70.2921 119.389H12.4367V0ZM38.689 98.9896H66.7807C69.3446 98.9896 71.797 98.7667 74.138 98.3208C76.479 97.7634 78.5413 96.9273 80.3249 95.8126C82.1084 94.5864 83.5019 92.97 84.5051 90.9634C85.6199 88.9569 86.1773 86.393 86.1773 83.2717C86.1773 77.1405 84.4494 72.793 80.9937 70.2291C77.538 67.5537 72.9675 66.216 67.2823 66.216H38.689V98.9896Z" fill="currentColor"/>
+        <path d="M115.122 0H204.413V22.072H141.374V47.6555H199.23V68.0554H141.374V97.3175H205.751V119.389H115.122V0Z" fill="currentColor"/>
+        <path d="M176.02 109.395C208.807 109.395 208.547 162.218 184.868 222.847C161.188 283.476 137.509 300.389 106.284 300.389C82.0846 300.389 71.1558 277.751 66.472 252.511C60.7474 221.025 64.6505 185.637 64.6505 185.637H61.7882C61.7882 185.637 57.8851 221.025 63.6097 252.511C57.8851 277.751 45.9154 300.129 25.8792 300.129C-11.0706 300.129 -0.9224 241.322 10.5268 201.77C22.2363 162.218 45.9154 110.696 89.1103 110.696C111.488 110.696 119.815 138.799 119.295 171.586C109.927 197.607 103.682 228.572 103.162 257.975H105.764C106.544 230.393 112.009 201.51 120.335 176.79C120.335 176.53 120.596 176.53 120.596 176.269C121.116 174.708 121.637 173.147 122.157 171.586C135.428 135.677 154.943 109.395 176.02 109.395Z" fill="#c41e24"/>
+        <path d="M38.8562 300.072H3.07283V278H100.892V300.072H65.1085V397.389H38.8562V300.072Z" fill="currentColor"/>
+        <path d="M120.678 338.196C120.678 343.213 121.235 348.118 122.35 352.911C123.576 357.593 125.471 361.829 128.035 365.619C130.599 369.409 133.943 372.475 138.068 374.816C142.192 377.045 147.209 378.16 153.117 378.16C159.025 378.16 164.042 377.045 168.166 374.816C172.291 372.475 175.635 369.409 178.199 365.619C180.763 361.829 182.602 357.593 183.717 352.911C184.943 348.118 185.556 343.213 185.556 338.196C185.556 332.957 184.943 327.885 183.717 322.98C182.602 318.075 180.763 313.728 178.199 309.938C175.635 306.036 172.291 302.97 168.166 300.741C164.042 298.4 159.025 297.229 153.117 297.229C147.209 297.229 142.192 298.4 138.068 300.741C133.943 302.97 130.599 306.036 128.035 309.938C125.471 313.728 123.576 318.075 122.35 322.98C121.235 327.885 120.678 332.957 120.678 338.196ZM94.4255 338.196C94.4255 329.278 95.7632 321.029 98.4386 313.449C101.114 305.757 104.96 299.069 109.976 293.384C114.993 287.698 121.124 283.239 128.37 280.007C135.727 276.774 143.976 275.157 153.117 275.157C162.369 275.157 170.619 276.774 177.864 280.007C185.11 283.239 191.241 287.698 196.258 293.384C201.274 299.069 205.12 305.757 207.795 313.449C210.471 321.029 211.808 329.278 211.808 338.196C211.808 346.891 210.471 355.029 207.795 362.609C205.12 370.078 201.274 376.599 196.258 382.173C191.241 387.747 185.11 392.15 177.864 395.383C170.619 398.504 162.369 400.065 153.117 400.065C143.976 400.065 135.727 398.504 128.37 395.383C121.124 392.15 114.993 387.747 109.976 382.173C104.96 376.599 101.114 370.078 98.4386 362.609C95.7632 355.029 94.4255 346.891 94.4255 338.196Z" fill="currentColor"/>
+      </svg>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" id="addMoreBtnTop" hidden>Add images</button>
+      <button class="btn btn-accent" id="clearAllBtn" disabled>Clear all</button>
+    </div>
+  </header>
+
+  <!-- Empty state -->
+  <section class="empty" id="emptyState">
+    <div class="empty-inner">
+      <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload images">
+        <h1>Drop images, or click to browse</h1>
+        <p>JPG, PNG or WebP · a bento grid builds itself instantly</p>
+      </div>
+      <p class="empty-note">Nothing you upload is ever sent anywhere or stored. Everything happens in your browser and disappears when you leave this page.</p>
+    </div>
+  </section>
+
+  <!-- Populated state -->
+  <div id="populated" hidden>
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span class="count" id="imageCount">0 images</span>
+        <button class="btn btn-ghost" id="addMoreBtn">+ Add images</button>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn" id="exportSvgBtn">Export SVG</button>
+        <button class="btn btn-primary" id="exportPngBtn">Export PNG</button>
+      </div>
+    </div>
+    <div class="grid-wrap">
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+
+  <footer>
+    <p class="footer-note">Nothing you upload is ever sent anywhere or stored. Everything happens in your browser and disappears when you leave this page.</p>
+    <a class="footer-credit" href="https://www.ahfos.com" target="_blank" rel="noopener">Made by ahfos</a>
+  </footer>
+
+</div>
+
+<input type="file" id="fileInput" class="sr-only" accept="image/png,image/jpeg,image/webp" multiple>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     STATE
+     ========================================================= */
+  // items: ordered array of { id, file, url, naturalW, naturalH, aspectClass, overrideType, isDefaultHero }
+  let items = [];
+  let nextId = 1;
+
+  const els = {
+    fileInput: document.getElementById("fileInput"),
+    dropzone: document.getElementById("dropzone"),
+    emptyState: document.getElementById("emptyState"),
+    populated: document.getElementById("populated"),
+    grid: document.getElementById("grid"),
+    imageCount: document.getElementById("imageCount"),
+    addMoreBtn: document.getElementById("addMoreBtn"),
+    addMoreBtnTop: document.getElementById("addMoreBtnTop"),
+    clearAllBtn: document.getElementById("clearAllBtn"),
+    exportPngBtn: document.getElementById("exportPngBtn"),
+    exportSvgBtn: document.getElementById("exportSvgBtn"),
+    toast: document.getElementById("toast"),
+  };
+
+  /* =========================================================
+     STEP A — classify aspect ratio
+     ========================================================= */
+  function classifyAspect(w, h) {
+    const aspect = w / h;
+    if (aspect > 1.8) return "wide";
+    if (aspect > 1.1) return "landscape";
+    if (aspect < 0.9) return "portrait";
+    return "square";
+  }
+
+  /* =========================================================
+     STEP C — pure placement function
+     input:  ordered item list + per-item overrides
+     output: array of { id, type } grid spans (CSS handles the
+             actual bin-packing via grid-auto-flow: dense)
+     Kept isolated so the heuristics below are easy to retune
+     independently of rendering / DOM code.
+     ========================================================= */
+  function computeLayout(orderedItems, columns) {
+    // Determine default heroes: the first image, plus the first
+    // square/landscape image found after it — unless the user has
+    // manually overridden types, in which case overrides always win.
+    let autoHeroIds = new Set();
+    if (orderedItems.length) {
+      autoHeroIds.add(orderedItems[0].id);
+      const second = orderedItems.slice(1).find(
+        it => it.aspectClass === "square" || it.aspectClass === "landscape"
+      );
+      if (second) autoHeroIds.add(second.id);
+    }
+
+    return orderedItems.map(it => {
+      let type;
+      if (it.overrideType) {
+        type = it.overrideType; // manual pin/resize always wins
+      } else if (autoHeroIds.has(it.id)) {
+        type = "hero";
+      } else if (it.aspectClass === "wide") {
+        type = "wide";
+      } else if (it.aspectClass === "portrait") {
+        type = "tall";
+      } else {
+        type = "standard";
+      }
+      return { id: it.id, type };
+    });
+  }
+
+  function nextType(type) {
+    const order = ["standard", "wide", "tall", "hero"];
+    const i = order.indexOf(type);
+    return order[(i + 1) % order.length];
+  }
+
+  /* =========================================================
+     RENDER
+     ========================================================= */
+  function currentColumns() {
+    return window.matchMedia("(max-width: 640px)").matches ? 2 : 6;
+  }
+
+  function render() {
+    const hasItems = items.length > 0;
+    els.emptyState.hidden = hasItems;
+    els.populated.hidden = !hasItems;
+    els.addMoreBtnTop.hidden = !hasItems;
+    els.clearAllBtn.disabled = !hasItems;
+    if (!hasItems) {
+      els.grid.innerHTML = "";
+      return;
+    }
+
+    els.imageCount.textContent = items.length + (items.length === 1 ? " image" : " images");
+
+    const layout = computeLayout(items, currentColumns());
+    const typeById = new Map(layout.map(l => [l.id, l.type]));
+
+    els.grid.innerHTML = "";
+    for (const it of items) {
+      const type = typeById.get(it.id);
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      tile.dataset.type = type;
+      tile.dataset.id = it.id;
+      tile.draggable = true;
+
+      const img = document.createElement("img");
+      img.src = it.url;
+      img.alt = "";
+      img.loading = "lazy";
+      tile.appendChild(img);
+
+      const overlay = document.createElement("div");
+      overlay.className = "tile-overlay";
+
+      const topRow = document.createElement("div");
+      topRow.className = "tile-row";
+
+      const handle = document.createElement("span");
+      handle.className = "icon-btn drag-handle";
+      handle.title = "Drag to reorder";
+      handle.innerHTML = dragIconSvg();
+      topRow.appendChild(handle);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "icon-btn remove";
+      removeBtn.title = "Remove image";
+      removeBtn.innerHTML = closeIconSvg();
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeItem(it.id);
+      });
+      topRow.appendChild(removeBtn);
+
+      const bottomRow = document.createElement("div");
+      bottomRow.className = "tile-row";
+
+      const cycleBtn = document.createElement("button");
+      cycleBtn.className = "chip" + (it.overrideType ? " is-locked" : "");
+      cycleBtn.textContent = type;
+      cycleBtn.title = it.overrideType ? "Pinned — click to cycle size" : "Click to cycle size";
+      cycleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        it.overrideType = nextType(type);
+        render();
+      });
+      bottomRow.appendChild(cycleBtn);
+      bottomRow.appendChild(document.createElement("span"));
+
+      overlay.appendChild(topRow);
+      overlay.appendChild(bottomRow);
+      tile.appendChild(overlay);
+
+      wireDragEvents(tile, it.id);
+      els.grid.appendChild(tile);
+    }
+  }
+
+  function dragIconSvg() {
+    return '<svg viewBox="0 0 14 14" fill="currentColor"><circle cx="4" cy="3" r="1.3"/><circle cx="10" cy="3" r="1.3"/><circle cx="4" cy="7" r="1.3"/><circle cx="10" cy="7" r="1.3"/><circle cx="4" cy="11" r="1.3"/><circle cx="10" cy="11" r="1.3"/></svg>';
+  }
+  function closeIconSvg() {
+    return '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 2L12 12M12 2L2 12"/></svg>';
+  }
+
+  /* =========================================================
+     STEP D — reorder via native HTML5 drag & drop
+     Reordering just mutates the `items` array and re-renders;
+     computeLayout() is re-run from scratch every time.
+     ========================================================= */
+  let dragSourceId = null;
+
+  function wireDragEvents(tile, id) {
+    tile.addEventListener("dragstart", (e) => {
+      dragSourceId = id;
+      tile.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", String(id)); } catch (_) {}
+    });
+    tile.addEventListener("dragend", () => {
+      tile.classList.remove("dragging");
+      document.querySelectorAll(".tile.drop-target").forEach(t => t.classList.remove("drop-target"));
+    });
+    tile.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      tile.classList.add("drop-target");
+    });
+    tile.addEventListener("dragleave", () => tile.classList.remove("drop-target"));
+    tile.addEventListener("drop", (e) => {
+      e.preventDefault();
+      tile.classList.remove("drop-target");
+      if (dragSourceId === null || dragSourceId === id) return;
+      reorder(dragSourceId, id);
+      dragSourceId = null;
+    });
+  }
+
+  function reorder(sourceId, targetId) {
+    const from = items.findIndex(it => it.id === sourceId);
+    const to = items.findIndex(it => it.id === targetId);
+    if (from === -1 || to === -1) return;
+    const [moved] = items.splice(from, 1);
+    items.splice(to, 0, moved);
+    render();
+  }
+
+  function removeItem(id) {
+    const idx = items.findIndex(it => it.id === id);
+    if (idx === -1) return;
+    URL.revokeObjectURL(items[idx].url);
+    items.splice(idx, 1);
+    render();
+  }
+
+  /* =========================================================
+     UPLOAD
+     ========================================================= */
+  function handleFiles(fileList) {
+    const files = Array.from(fileList).filter(f => /^image\/(png|jpeg|webp)$/.test(f.type));
+    if (!files.length) return;
+
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const item = {
+          id: nextId++,
+          file,
+          url,
+          naturalW: img.naturalWidth,
+          naturalH: img.naturalHeight,
+          aspectClass: classifyAspect(img.naturalWidth, img.naturalHeight),
+          overrideType: null,
+        };
+        items.push(item);
+        render();
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        showToast("Couldn't read " + file.name);
+      };
+      img.src = url;
+    });
+  }
+
+  function clearAll() {
+    items.forEach(it => URL.revokeObjectURL(it.url));
+    items = [];
+    render();
+  }
+
+  /* =========================================================
+     EXPORT — measure the live grid, draw onto an off-screen
+     canvas (PNG) or build <image> elements (SVG). Cover-fit
+     crop math mirrors CSS object-fit: cover.
+     ========================================================= */
+  function coverCrop(srcW, srcH, destW, destH) {
+    const srcAspect = srcW / srcH;
+    const destAspect = destW / destH;
+    let sw, sh, sx, sy;
+    if (srcAspect > destAspect) {
+      sh = srcH;
+      sw = srcH * destAspect;
+      sx = (srcW - sw) / 2;
+      sy = 0;
+    } else {
+      sw = srcW;
+      sh = srcW / destAspect;
+      sx = 0;
+      sy = (srcH - sh) / 2;
+    }
+    return { sx, sy, sw, sh };
+  }
+
+  function measureTiles() {
+    const gridRect = els.grid.getBoundingClientRect();
+    const tiles = Array.from(els.grid.querySelectorAll(".tile"));
+    return tiles.map(tile => {
+      const r = tile.getBoundingClientRect();
+      const id = Number(tile.dataset.id);
+      const item = items.find(it => it.id === id);
+      return {
+        item,
+        x: r.left - gridRect.left,
+        y: r.top - gridRect.top,
+        w: r.width,
+        h: r.height,
+      };
+    });
+  }
+
+  function imageToDataURL(item) {
+    const c = document.createElement("canvas");
+    c.width = item.naturalW;
+    c.height = item.naturalH;
+    const ctx = c.getContext("2d");
+    const img = els.grid.querySelector('.tile[data-id="' + item.id + '"] img');
+    ctx.drawImage(img, 0, 0, item.naturalW, item.naturalH);
+    const mime = /png/.test(item.file.type) ? "image/png" : "image/jpeg";
+    return c.toDataURL(mime, 0.92);
+  }
+
+  async function exportPNG() {
+    if (!items.length) return;
+    const tiles = measureTiles();
+    const gridRect = els.grid.getBoundingClientRect();
+    const scale = 1600 / gridRect.width; // fixed export resolution, DPI-independent
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(gridRect.width * scale);
+    canvas.height = Math.round(gridRect.height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#f2f2f2";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (const t of tiles) {
+      const destX = t.x * scale, destY = t.y * scale, destW = t.w * scale, destH = t.h * scale;
+      const img = els.grid.querySelector('.tile[data-id="' + t.item.id + '"] img');
+      const crop = coverCrop(t.item.naturalW, t.item.naturalH, destW, destH);
+      ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, destX, destY, destW, destH);
+    }
+
+    canvas.toBlob(blob => {
+      downloadBlob(blob, "bento-grid.png");
+    }, "image/png");
+  }
+
+  function exportSVG() {
+    if (!items.length) return;
+    const tiles = measureTiles();
+    const gridRect = els.grid.getBoundingClientRect();
+    const W = Math.round(gridRect.width);
+    const H = Math.round(gridRect.height);
+
+    const parts = [];
+    parts.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">');
+    parts.push('<rect width="100%" height="100%" fill="#f2f2f2"/>');
+    for (const t of tiles) {
+      const dataUrl = imageToDataURL(t.item);
+      const rx = 10;
+      const clipId = "clip" + t.item.id;
+      parts.push('<clipPath id="' + clipId + '"><rect x="' + t.x + '" y="' + t.y + '" width="' + t.w + '" height="' + t.h + '" rx="' + rx + '"/></clipPath>');
+      parts.push(
+        '<image href="' + dataUrl + '" x="' + t.x + '" y="' + t.y + '" width="' + t.w + '" height="' + t.h +
+        '" preserveAspectRatio="xMidYMid slice" clip-path="url(#' + clipId + ')"/>'
+      );
+    }
+    parts.push('</svg>');
+
+    const blob = new Blob([parts.join("")], { type: "image/svg+xml" });
+    downloadBlob(blob, "bento-grid.svg");
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showToast("Exported " + filename);
+  }
+
+  /* =========================================================
+     TOAST
+     ========================================================= */
+  let toastTimer = null;
+  function showToast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2200);
+  }
+
+  /* =========================================================
+     WIRE UP UI
+     ========================================================= */
+  els.dropzone.addEventListener("click", () => els.fileInput.click());
+  els.dropzone.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); els.fileInput.click(); }
+  });
+  els.addMoreBtn.addEventListener("click", () => els.fileInput.click());
+  els.addMoreBtnTop.addEventListener("click", () => els.fileInput.click());
+  els.fileInput.addEventListener("change", (e) => {
+    handleFiles(e.target.files);
+    e.target.value = "";
+  });
+
+  ["dragenter", "dragover"].forEach(evt => {
+    els.dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      els.dropzone.classList.add("drag-over");
+    });
+  });
+  ["dragleave", "drop"].forEach(evt => {
+    els.dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      els.dropzone.classList.remove("drag-over");
+    });
+  });
+  els.dropzone.addEventListener("drop", (e) => {
+    if (e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+  });
+
+  // Also allow dropping new files anywhere over the populated grid view
+  els.grid.addEventListener("dragover", (e) => {
+    if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+  });
+  els.grid.addEventListener("drop", (e) => {
+    if (e.dataTransfer.files && e.dataTransfer.files.length && dragSourceId === null) {
+      e.preventDefault();
+      handleFiles(e.dataTransfer.files);
+    }
+  });
+
+  els.clearAllBtn.addEventListener("click", clearAll);
+  els.exportPngBtn.addEventListener("click", exportPNG);
+  els.exportSvgBtn.addEventListener("click", exportSVG);
+
+  window.addEventListener("resize", debounce(render, 150));
+  window.addEventListener("beforeunload", () => {
+    items.forEach(it => URL.revokeObjectURL(it.url));
+  });
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
