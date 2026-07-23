@@ -1254,6 +1254,9 @@
     return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
   }
 
+  // Belt-and-braces: ResizeObserver catches container-level changes
+  // (sidebar toggles, zoom) and window "resize" catches everything
+  // else — both call the same idempotent render/re-layout functions.
   if (typeof ResizeObserver !== "undefined") {
     new ResizeObserver(debounce(() => {
       if (currentView === "editor" && items.length) render();
@@ -1262,12 +1265,11 @@
     new ResizeObserver(debounce(() => {
       if (!els.previewOverlay.hidden) renderPreviewContent();
     }, 120)).observe(els.previewScroll);
-  } else {
-    window.addEventListener("resize", debounce(() => {
-      if (currentView === "editor" && items.length) render();
-      if (!els.previewOverlay.hidden) renderPreviewContent();
-    }, 150));
   }
+  window.addEventListener("resize", debounce(() => {
+    if (currentView === "editor" && items.length) render();
+    if (!els.previewOverlay.hidden) renderPreviewContent();
+  }, 150));
 
   showView();
 })();
