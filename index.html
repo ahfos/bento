@@ -291,6 +291,24 @@
     gap: 1.1rem;
   }
 
+  .aspect-control {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .aspect-control input[type="checkbox"] {
+    width: 17px;
+    height: 17px;
+    accent-color: var(--fg);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
   .radius-control {
     display: flex;
     align-items: center;
@@ -341,6 +359,9 @@
     user-select: none;
     background: #f2f2f2;
   }
+  /* aspect-ratio lock off + a pinned wide/tall tile: crop to fill the
+     forced shape instead of letterboxing the true photographed ratio */
+  .tile.cropped img { object-fit: cover; }
 
   .tile.dragging { opacity: 0.35; }
   .tile.drop-target::after {
@@ -428,10 +449,18 @@
   .icon-btn svg { width: 14px; height: 14px; }
 
   .drag-handle {
+    position: relative;
     cursor: grab;
     touch-action: none;
   }
   .drag-handle:active { cursor: grabbing; }
+  /* invisible enlarged hit-region — the visible icon stays 26px but the
+     actual tap target is comfortably touch-sized */
+  .drag-handle::before {
+    content: "";
+    position: absolute;
+    inset: -9px;
+  }
 
   /* ---------- preview overlay ---------- */
   .preview-overlay {
@@ -678,8 +707,11 @@
         <button class="btn btn-ghost" id="addMoreBtnTop" hidden>Add images</button>
         <button class="btn btn-accent" id="clearAllBtn" disabled>Clear all</button>
       </div>
-      <button class="topbar-icon-btn" id="downloadBtn" type="button" aria-label="Download" hidden>
+      <button class="topbar-icon-btn" id="downloadBtn" type="button" aria-label="Preview & download" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+      </button>
+      <button class="topbar-icon-btn" id="landingShareBtn" type="button" aria-label="Share">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.2M8.3 13.3l7.4 4.2"/></svg>
       </button>
     </div>
   </header>
@@ -733,6 +765,10 @@
           <button class="btn btn-ghost" id="addMoreBtn">+ Add images</button>
         </div>
         <div class="toolbar-right">
+          <label class="aspect-control" for="aspectCheckbox">
+            <input type="checkbox" id="aspectCheckbox" checked>
+            <span>Maintain aspect ratio</span>
+          </label>
           <div class="radius-control">
             <label for="radiusSlider">Corners</label>
             <input type="range" id="radiusSlider" min="0" max="40" step="1" value="10" aria-label="Tile corner radius">
@@ -833,6 +869,7 @@
   let currentView = "landing"; // "landing" | "editor"
   let previewState = { outerWidth: 0, innerWidth: 0, layout: null };
   let cornerRadius = DEFAULT_RADIUS;
+  let maintainAspect = true; // unchecking lets a pinned wide/tall tile crop to a canonical shape
 
   const els = {
     fileInput: document.getElementById("fileInput"),
@@ -852,10 +889,12 @@
     makeBentoBtn: document.getElementById("makeBentoBtn"),
     previewBtn: document.getElementById("previewBtn"),
     radiusSlider: document.getElementById("radiusSlider"),
+    aspectCheckbox: document.getElementById("aspectCheckbox"),
     infoBtn: document.getElementById("infoBtn"),
     infoOverlay: document.getElementById("infoOverlay"),
     closeInfoBtn: document.getElementById("closeInfoBtn"),
     shareBtn: document.getElementById("shareBtn"),
+    landingShareBtn: document.getElementById("landingShareBtn"),
     downloadBtn: document.getElementById("downloadBtn"),
     shareStoryOverlay: document.getElementById("shareStoryOverlay"),
     shareStoryBackdrop: document.getElementById("shareStoryBackdrop"),
@@ -921,12 +960,26 @@
     return map;
   }
 
+  // Only "wide"/"tall" are directional shape requests worth force-cropping
+  // for when aspect-lock is off — "hero" is about prominence/size, not
+  // shape, and "standard" already means "leave it be."
+  const TARGET_ASPECT = { wide: 16 / 9, tall: 3 / 4 };
+
+  function isForcedCrop(item) {
+    return !maintainAspect && !!item.overrideType && TARGET_ASPECT[item.overrideType] != null;
+  }
+
+  function effectiveAspect(item) {
+    if (isForcedCrop(item)) return TARGET_ASPECT[item.overrideType];
+    return item.naturalW / item.naturalH;
+  }
+
   function computeJustifiedLayout(orderedItems, containerWidth) {
     const result = { placed: [], canvasWidth: containerWidth, canvasHeight: 0 };
     if (!orderedItems.length || containerWidth <= 0) return result;
 
     const typeMap = getEffectiveTypes(orderedItems);
-    const claimWidth = item => BASE_H * (item.naturalW / item.naturalH) * PRIORITY_WEIGHT[typeMap.get(item.id)];
+    const claimWidth = item => BASE_H * effectiveAspect(item) * PRIORITY_WEIGHT[typeMap.get(item.id)];
 
     // Pass 1 — row membership, weighted by priority. If two items were
     // explicitly paired (dragged to sit beside one another — see
@@ -967,14 +1020,17 @@
     // summing these variable row heights.
     let y = 0;
     rows.forEach(row => {
-      const aspects = row.map(item => item.naturalW / item.naturalH);
+      const aspects = row.map(item => effectiveAspect(item));
       const totalAspect = aspects.reduce((a, b) => a + b, 0);
       const totalGaps = GAP * (row.length - 1);
       const rowHeight = (containerWidth - totalGaps) / totalAspect;
       let x = 0;
       row.forEach((item, i) => {
         const w = rowHeight * aspects[i];
-        result.placed.push({ id: item.id, x, y, w, h: rowHeight, type: typeMap.get(item.id) });
+        result.placed.push({
+          id: item.id, x, y, w, h: rowHeight, type: typeMap.get(item.id),
+          cropped: isForcedCrop(item),
+        });
         x += w + GAP;
       });
       y += rowHeight + GAP;
@@ -996,7 +1052,7 @@
      ========================================================= */
   function buildTileEl(item, pos, opts) {
     const tile = document.createElement("div");
-    tile.className = "tile";
+    tile.className = "tile" + (pos.cropped ? " cropped" : "");
     tile.dataset.id = item.id;
     tile.style.left = pos.x + "px";
     tile.style.top = pos.y + "px";
@@ -1010,7 +1066,6 @@
     tile.appendChild(img);
 
     if (opts.interactive) {
-      tile.draggable = true;
       tile.dataset.type = opts.type;
 
       const overlay = document.createElement("div");
@@ -1060,7 +1115,7 @@
       overlay.appendChild(bottomRow);
       tile.appendChild(overlay);
 
-      wireDragEvents(tile, item.id);
+      wireDragEvents(tile, handle, item.id);
     }
 
     return tile;
@@ -1084,6 +1139,7 @@
     // duplicate it in the header there too
     els.logoHomeBtn.hidden = currentView === "landing";
     els.downloadBtn.hidden = currentView !== "editor";
+    els.landingShareBtn.hidden = currentView !== "landing";
     if (currentView === "editor") render();
     else scheduleSessionSave();
   }
@@ -1109,6 +1165,12 @@
     const containerWidth = Math.min(els.grid.clientWidth || 0, MAX_CANVAS_W) || Math.min(els.gridWrap.clientWidth - 4, MAX_CANVAS_W);
     const layout = computeJustifiedLayout(items, containerWidth);
 
+    // the corner-radius slider is calibrated against the full MAX_CANVAS_W
+    // export size; on a narrow phone the live grid renders much smaller
+    // than that, so an unscaled radius would look proportionally rounder
+    // on-screen than it will in the actual exported file. Scoping a scaled
+    // --radius to just this container keeps what you see honest.
+    els.grid.style.setProperty("--radius", (cornerRadius * Math.min(1, containerWidth / MAX_CANVAS_W)) + "px");
     els.grid.style.height = layout.canvasHeight + "px";
     els.grid.innerHTML = "";
     for (const p of layout.placed) {
@@ -1139,56 +1201,83 @@
          or spill to the next row — it never crops and never
          leaves a gap either way.
      ========================================================= */
-  let dragSourceId = null;
-  let dropZoneInfo = null; // { targetId, mode: "swap" | "insert", edge? }
+  // Pointer Events (not the old native HTML5 draggable="true" API) so this
+  // works identically for mouse AND touch — native HTML5 drag-and-drop
+  // largely doesn't fire from touch input on mobile browsers at all, which
+  // meant reordering was effectively dead on phones. A single pointerdown/
+  // move/up sequence on the drag handle now drives the same swap/insert
+  // zone logic on every device.
   const EDGE_CLASSES = ["drop-target", "drop-target-left", "drop-target-right", "drop-target-top", "drop-target-bottom"];
 
   function clearDropIndicators() {
     document.querySelectorAll(".tile." + EDGE_CLASSES.join(", .tile.")).forEach(t => t.classList.remove(...EDGE_CLASSES));
   }
 
-  function wireDragEvents(tile, id) {
-    tile.addEventListener("dragstart", (e) => {
-      dragSourceId = id;
-      tile.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      try { e.dataTransfer.setData("text/plain", String(id)); } catch (_) {}
-    });
-    tile.addEventListener("dragend", () => {
-      tile.classList.remove("dragging");
+  function wireDragEvents(tile, handle, id) {
+    let active = false;   // pointer is down on the handle, watching for movement
+    let dragging = false; // moved past the threshold — an actual drag is underway
+    let pointerId = null;
+    let startX = 0, startY = 0;
+    let zoneInfo = null;
+
+    function computeZone(clientX, clientY) {
       clearDropIndicators();
-      dropZoneInfo = null;
-    });
-    tile.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      if (dragSourceId === null || dragSourceId === id) return;
-      const rect = tile.getBoundingClientRect();
-      const dx = rect.width ? (e.clientX - rect.left) / rect.width : 0.5;
-      const dy = rect.height ? (e.clientY - rect.top) / rect.height : 0.5;
-      clearDropIndicators();
+      zoneInfo = null;
+      const under = document.elementFromPoint(clientX, clientY);
+      const targetTile = under ? under.closest(".tile") : null;
+      if (!targetTile || targetTile === tile || !els.grid.contains(targetTile)) return;
+      const targetId = Number(targetTile.dataset.id);
+      const rect = targetTile.getBoundingClientRect();
+      const dx = rect.width ? (clientX - rect.left) / rect.width : 0.5;
+      const dy = rect.height ? (clientY - rect.top) / rect.height : 0.5;
       if (dx >= 0.28 && dx <= 0.72 && dy >= 0.28 && dy <= 0.72) {
-        tile.classList.add("drop-target");
-        dropZoneInfo = { targetId: id, mode: "swap" };
+        targetTile.classList.add("drop-target");
+        zoneInfo = { targetId, mode: "swap" };
       } else {
         const distances = { left: dx, right: 1 - dx, top: dy, bottom: 1 - dy };
         const edge = Object.keys(distances).reduce((a, b) => distances[a] <= distances[b] ? a : b);
-        tile.classList.add("drop-target-" + edge);
-        dropZoneInfo = { targetId: id, mode: "insert", edge };
+        targetTile.classList.add("drop-target-" + edge);
+        zoneInfo = { targetId, mode: "insert", edge };
       }
-    });
-    tile.addEventListener("dragleave", (e) => {
-      if (!tile.contains(e.relatedTarget)) clearDropIndicators();
-    });
-    tile.addEventListener("drop", (e) => {
+    }
+
+    function onMove(e) {
+      if (e.pointerId !== pointerId) return;
+      if (!dragging) {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) < 6) return;
+        dragging = true;
+        tile.classList.add("dragging");
+      }
       e.preventDefault();
-      clearDropIndicators();
-      const info = dropZoneInfo;
-      dropZoneInfo = null;
-      if (dragSourceId === null || dragSourceId === id || !info) { dragSourceId = null; return; }
-      if (info.mode === "swap") swapItems(dragSourceId, id);
-      else insertAdjacent(dragSourceId, id, info.edge);
-      dragSourceId = null;
+      computeZone(e.clientX, e.clientY);
+    }
+    function finish(commit) {
+      if (dragging) {
+        tile.classList.remove("dragging");
+        clearDropIndicators();
+        if (commit && zoneInfo) {
+          if (zoneInfo.mode === "swap") swapItems(id, zoneInfo.targetId);
+          else insertAdjacent(id, zoneInfo.targetId, zoneInfo.edge);
+        }
+      }
+      try { handle.releasePointerCapture(pointerId); } catch (_) {}
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onCancel);
+      active = false; dragging = false; pointerId = null; zoneInfo = null;
+    }
+    function onUp(e) { if (e.pointerId === pointerId) finish(true); }
+    function onCancel(e) { if (e.pointerId === pointerId) finish(false); }
+
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== undefined && e.button !== 0) return; // left-click only for mice
+      active = true;
+      pointerId = e.pointerId;
+      startX = e.clientX; startY = e.clientY;
+      try { handle.setPointerCapture(pointerId); } catch (_) {}
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onCancel);
     });
   }
 
@@ -1318,7 +1407,7 @@
         });
       }
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({
-        v: 1, cornerRadius, currentView, items: serialized,
+        v: 1, cornerRadius, maintainAspect, currentView, items: serialized,
       }));
     } catch (_) {
       // quota exceeded or storage unavailable — autosave is best-effort only
@@ -1352,6 +1441,7 @@
     });
     nextId = maxId + 1;
     if (typeof data.cornerRadius === "number") cornerRadius = data.cornerRadius;
+    if (typeof data.maintainAspect === "boolean") maintainAspect = data.maintainAspect;
     currentView = "editor";
     return true;
   }
@@ -1369,6 +1459,9 @@
     const totalHeight = PAD + layout.canvasHeight + BAR_H + PAD;
     els.previewCanvas.style.width = outerWidth + "px";
     els.previewCanvas.style.height = totalHeight + "px";
+    // same proportional-radius correction as the editor grid, so a small
+    // mobile preview still matches what the full-size export will look like
+    els.previewCanvas.style.setProperty("--radius", (cornerRadius * Math.min(1, outerWidth / MAX_CANVAS_W)) + "px");
     els.previewCanvas.innerHTML = "";
 
     layout.placed.forEach(p => {
@@ -1404,10 +1497,15 @@
 
   /* =========================================================
      EXPORT — PNG (canvas), SVG (vector), PDF (jsPDF over the
-     PNG canvas). No cropping: every drawImage call scales the
+     PNG canvas). By default every drawImage call scales the
      *entire* source image into a box that already matches its
-     own aspect ratio, and every export bakes in a bottom brand
-     bar with the BENTO mark + "An Ahfos Initiative".
+     own aspect ratio (no cropping); the one exception is a tile
+     pinned to a shape with "maintain aspect ratio" unchecked,
+     which is deliberately center-cropped (drawImageCover) to
+     match its forced shape — exactly what the editor/preview
+     already show for that tile via object-fit: cover. Every
+     export bakes in a bottom brand bar with the BENTO mark +
+     "An Ahfos Initiative".
      ========================================================= */
   function getLoadedImage(item) {
     if (item._img && item._img.complete && item._img.naturalWidth) return Promise.resolve(item._img);
@@ -1478,6 +1576,22 @@
     ctx.closePath();
   }
 
+  // draws the full source image scaled to fill a box of a different aspect
+  // ratio than its own, center-cropping the overflow — used only for tiles
+  // pinned to a shape with aspect-lock off; everywhere else the box already
+  // matches the source's own aspect ratio, so a plain drawImage is enough.
+  function drawImageCover(ctx, img, dx, dy, dw, dh) {
+    const srcW = img.naturalWidth || img.width, srcH = img.naturalHeight || img.height;
+    const srcAspect = srcW / srcH, dstAspect = dw / dh;
+    let sx, sy, sw, sh;
+    if (srcAspect > dstAspect) {
+      sh = srcH; sw = sh * dstAspect; sx = (srcW - sw) / 2; sy = 0;
+    } else {
+      sw = srcW; sh = sw / dstAspect; sx = 0; sy = (srcH - sh) / 2;
+    }
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+
   async function buildExportCanvas() {
     const outerWidth = previewState.outerWidth || MAX_CANVAS_W;
     const innerWidth = previewState.innerWidth || Math.max(100, outerWidth - PAD * 2);
@@ -1503,7 +1617,8 @@
       ctx.save();
       roundedRectPath(ctx, dx, dy, dw, dh, cornerRadius * scale);
       ctx.clip();
-      ctx.drawImage(img, dx, dy, dw, dh);
+      if (p.cropped) drawImageCover(ctx, img, dx, dy, dw, dh);
+      else ctx.drawImage(img, dx, dy, dw, dh);
       ctx.restore();
     }
 
@@ -1514,12 +1629,15 @@
   async function exportPNG() {
     if (!items.length) return;
     const canvas = await buildExportCanvas();
-    await new Promise(resolve => {
-      canvas.toBlob(async blob => {
-        if (blob) await downloadBlob(blob, "bento-grid.png");
-        resolve();
-      }, "image/png");
-    });
+    // NOTE: this used to await an async callback *inside* the toBlob
+    // callback without a matching reject path — if downloadBlob() ever
+    // threw in there, the wrapping Promise never settled and the button
+    // stayed disabled forever (looked exactly like a frozen page). Splitting
+    // blob-creation from the download step means a real error now properly
+    // rejects and reaches runExport()'s catch instead of hanging silently.
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+    if (!blob) throw new Error("Could not encode PNG");
+    await downloadBlob(blob, "bento-grid.png");
   }
 
   function buildBrandBarSVG(xOffset, width, y, barHeight) {
@@ -1580,9 +1698,13 @@
       const dataUrl = await imageToDataURL(item);
       const clipId = "clip" + p.id;
       const x = p.x + PAD, y = p.y + PAD;
+      // "slice" = cover/crop for a forced-shape tile (aspect-lock off);
+      // "meet" = contain/letterbox, which for a normal tile is a no-op
+      // since the box already matches the image's own aspect ratio
+      const fit = p.cropped ? "xMidYMid slice" : "xMidYMid meet";
       parts.push('<clipPath id="' + clipId + '"><rect x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h + '" rx="' + cornerRadius + '"/></clipPath>');
       parts.push('<image href="' + dataUrl + '" x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h +
-        '" preserveAspectRatio="xMidYMid meet" clip-path="url(#' + clipId + ')"/>');
+        '" preserveAspectRatio="' + fit + '" clip-path="url(#' + clipId + ')"/>');
     }
     parts.push(buildBrandBarSVG(PAD, innerWidth, PAD + gridH, BAR_H));
     parts.push("</svg>");
@@ -1616,31 +1738,27 @@
     return (navigator.maxTouchPoints || 0) > 0 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
   }
 
+  // A plain <a download> click is the one behaviour that reliably lands a
+  // file in the browser's actual Downloads location on both desktop and
+  // modern mobile Safari/Chrome — which is where someone checking "did it
+  // download?" is going to look. Routing this through the Web Share sheet
+  // instead was a mistake: navigator.share() can resolve "successfully"
+  // (e.g. the user picks Messages, or an in-app webview stubs the API)
+  // without ever actually saving a file anywhere, which is exactly the
+  // "says exported but nothing downloaded" symptom. Web Share stays
+  // reserved for the explicit Share-to-Story action, where sharing (not
+  // saving) is the whole point.
   async function downloadBlob(blob, filename) {
-    // A plain <a download> click is unreliable on mobile: iOS Safari has
-    // been flaky about it historically, and virtually every in-app webview
-    // (Instagram, Twitter, etc.) silently swallows it. The OS share sheet
-    // (Save Image / Save to Files) is the reliable path there, so prefer
-    // it on touch devices and fall back to the anchor-download otherwise.
-    if (isTouchDevice() && navigator.canShare) {
-      try {
-        const file = new File([blob], filename, { type: blob.type });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file] });
-          showToast("Exported " + filename);
-          return;
-        }
-      } catch (_) { /* cancelled or unsupported — fall through to direct download */ }
-    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
+    a.rel = "noopener";
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
-    showToast("Exported " + filename);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    showToast("Downloaded " + filename);
   }
 
   /* =========================================================
@@ -1768,7 +1886,8 @@
         ctx.save();
         roundedRectPath(ctx, dx, dy, dw, dh, 6 * scale);
         ctx.clip();
-        ctx.drawImage(img, dx, dy, dw, dh);
+        if (p.cropped) drawImageCover(ctx, img, dx, dy, dw, dh);
+        else ctx.drawImage(img, dx, dy, dw, dh);
         ctx.restore();
       }
     }
@@ -1873,7 +1992,10 @@
     if (e.dataTransfer.types.includes("Files")) e.preventDefault();
   });
   els.grid.addEventListener("drop", (e) => {
-    if (e.dataTransfer.files && e.dataTransfer.files.length && dragSourceId === null) {
+    // tile reordering now runs on Pointer Events, not native HTML5 drag —
+    // so a native "drop" here can only ever be an OS file drag, never an
+    // internal reorder; no more need to disambiguate the two.
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
       e.preventDefault();
       handleFiles(e.dataTransfer.files);
     }
@@ -1886,17 +2008,28 @@
   });
 
   els.shareBtn.addEventListener("click", openShareStory);
+  els.landingShareBtn.addEventListener("click", openShareStory);
   els.shareStoryCloseBtn.addEventListener("click", closeShareStory);
   els.shareStoryBackdrop.addEventListener("click", closeShareStory);
   els.shareStoryBtn.addEventListener("click", shareStory);
   els.downloadBtn.addEventListener("click", () => {
-    if (!items.length) { showToast("Add some images first"); return; }
-    runExport(els.downloadBtn, "PNG", exportPNG);
+    // opens the same Preview screen as the "Preview" button rather than
+    // exporting blind — the whole point is that people should see the
+    // literal composed result (brand bar, crop, radius) before a file
+    // gets generated, especially on a small phone screen where it's easy
+    // to lose track of what the export will actually look like
+    openPreview();
   });
 
   els.radiusSlider.addEventListener("input", (e) => {
     cornerRadius = Number(e.target.value);
     document.documentElement.style.setProperty("--radius", cornerRadius + "px");
+    scheduleSessionSave();
+  });
+
+  els.aspectCheckbox.addEventListener("change", (e) => {
+    maintainAspect = e.target.checked;
+    if (currentView === "editor") render();
     scheduleSessionSave();
   });
 
@@ -1958,6 +2091,7 @@
 
   const wasRestored = restoreSession();
   els.radiusSlider.value = String(cornerRadius);
+  els.aspectCheckbox.checked = maintainAspect;
   document.documentElement.style.setProperty("--radius", cornerRadius + "px");
   showView();
   if (wasRestored) showToast("Restored your last session");
