@@ -540,6 +540,7 @@
   const GAP = 10;               // px, both within the grid and export
   const MAX_CANVAS_W = 1200;    // grid / export canvas caps out here
   const BAR_H = 64;             // branded bottom bar height, baked into exports
+  const PAD = 40;               // outer padding around the preview/export canvas
   const TYPE_MULT = { standard: 1, wide: 0.75, tall: 1.6, hero: 2.2 };
   const LOGO_VB = { w: 212, h: 401 };
   const LOGO_PATHS = [
@@ -557,7 +558,7 @@
   let items = [];
   let nextId = 1;
   let currentView = "landing"; // "landing" | "editor"
-  let previewState = { containerWidth: 0, layout: null };
+  let previewState = { outerWidth: 0, innerWidth: 0, layout: null };
 
   const els = {
     fileInput: document.getElementById("fileInput"),
@@ -674,7 +675,12 @@
         rowHeight = targetH * scale;
         widths = naturalWidths.map(w => w * scale);
       }
-      let x = 0;
+      // Center this row within containerWidth. Rows that were scaled to
+      // fill exactly already sit at x=0; natural/unscaled rows (a lone
+      // hero, a short trailing row, etc.) get centered instead of being
+      // left stuck against the edge.
+      const rowContentWidth = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1);
+      let x = Math.max(0, (containerWidth - rowContentWidth) / 2);
       row.items.forEach((item, i) => {
         placed.push({ id: item.id, x, y, w: widths[i], h: rowHeight });
         x += widths[i] + gap;
@@ -930,25 +936,28 @@
      ========================================================= */
   function renderPreviewContent() {
     const available = els.previewScroll.clientWidth - 48;
-    const containerWidth = Math.max(240, Math.min(available, MAX_CANVAS_W));
-    const layout = computeJustifiedLayout(items, containerWidth);
-    previewState = { containerWidth, layout };
+    const outerWidth = Math.max(240, Math.min(available, MAX_CANVAS_W));
+    const innerWidth = Math.max(100, outerWidth - PAD * 2);
+    const layout = computeJustifiedLayout(items, innerWidth);
+    previewState = { outerWidth, innerWidth, layout };
 
-    els.previewCanvas.style.width = containerWidth + "px";
-    els.previewCanvas.style.height = (layout.canvasHeight + BAR_H) + "px";
+    const totalHeight = PAD + layout.canvasHeight + BAR_H + PAD;
+    els.previewCanvas.style.width = outerWidth + "px";
+    els.previewCanvas.style.height = totalHeight + "px";
     els.previewCanvas.innerHTML = "";
 
     layout.placed.forEach(p => {
       const item = items.find(it => it.id === p.id);
       if (!item) return;
-      const tile = buildTileEl(item, p, { interactive: false });
+      const tile = buildTileEl(item, { ...p, x: p.x + PAD, y: p.y + PAD }, { interactive: false });
       els.previewCanvas.appendChild(tile);
     });
 
     const bar = document.createElement("div");
     bar.className = "brand-bar";
-    bar.style.top = layout.canvasHeight + "px";
-    bar.style.width = containerWidth + "px";
+    bar.style.left = PAD + "px";
+    bar.style.top = (PAD + layout.canvasHeight) + "px";
+    bar.style.width = innerWidth + "px";
     bar.style.height = BAR_H + "px";
     bar.innerHTML = '<svg class="brand-bar-logo" viewBox="0 0 212 401">' +
       LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") +
@@ -1000,12 +1009,10 @@
     });
   }
 
-  async function drawBrandBar(ctx, canvasWidth, y, barHeight) {
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, y, canvasWidth, barHeight);
+  async function drawBrandBar(ctx, xOffset, width, y, barHeight) {
     ctx.strokeStyle = "#e5e5e5";
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(canvasWidth, y + 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xOffset, y + 0.5); ctx.lineTo(xOffset + width, y + 0.5); ctx.stroke();
 
     const logoH = Math.round(barHeight * 0.4);
     const logoImg = await getLogoImage(logoH);
@@ -1022,7 +1029,7 @@
     textWidth -= letterSpacing;
 
     const groupWidth = logoW + gapPx + textWidth;
-    let cursorX = (canvasWidth - groupWidth) / 2;
+    let cursorX = xOffset + (width - groupWidth) / 2;
     const centerY = y + barHeight / 2;
 
     ctx.drawImage(logoImg, cursorX, centerY - logoH / 2, logoW, logoH);
@@ -1036,14 +1043,16 @@
   }
 
   async function buildExportCanvas() {
-    const containerWidth = previewState.containerWidth || MAX_CANVAS_W;
-    const layout = previewState.layout || computeJustifiedLayout(items, containerWidth);
-    const scale = Math.max(1, 1600 / containerWidth);
+    const outerWidth = previewState.outerWidth || MAX_CANVAS_W;
+    const innerWidth = previewState.innerWidth || Math.max(100, outerWidth - PAD * 2);
+    const layout = previewState.layout || computeJustifiedLayout(items, innerWidth);
+    const scale = Math.max(1, 1600 / outerWidth);
     const gridH = layout.canvasHeight;
+    const totalH = PAD + gridH + BAR_H + PAD;
 
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(containerWidth * scale);
-    canvas.height = Math.round((gridH + BAR_H) * scale);
+    canvas.width = Math.round(outerWidth * scale);
+    canvas.height = Math.round(totalH * scale);
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1052,11 +1061,12 @@
       const item = items.find(it => it.id === p.id);
       if (!item) continue;
       const img = await getLoadedImage(item);
-      // full source image, scaled (never cropped) into its own box
-      ctx.drawImage(img, p.x * scale, p.y * scale, p.w * scale, p.h * scale);
+      // full source image, scaled (never cropped) into its own box,
+      // offset by the outer padding
+      ctx.drawImage(img, (p.x + PAD) * scale, (p.y + PAD) * scale, p.w * scale, p.h * scale);
     }
 
-    await drawBrandBar(ctx, containerWidth * scale, gridH * scale, BAR_H * scale);
+    await drawBrandBar(ctx, PAD * scale, innerWidth * scale, (PAD + gridH) * scale, BAR_H * scale);
     return canvas;
   }
 
@@ -1087,7 +1097,7 @@
     return w;
   }
 
-  function buildBrandBarSVG(canvasWidth, y, barHeight) {
+  function buildBrandBarSVG(xOffset, width, y, barHeight) {
     const logoH = Math.round(barHeight * 0.4);
     const logoW = Math.round(logoH * (LOGO_VB.w / LOGO_VB.h));
     const gapPx = Math.round(barHeight * 0.16);
@@ -1096,14 +1106,13 @@
     const letterSpacing = Math.max(1, Math.round(barHeight * 0.03));
     const textWidth = measureSvgTextWidth(text, fontSize, 700, letterSpacing);
     const groupWidth = logoW + gapPx + textWidth;
-    const startX = (canvasWidth - groupWidth) / 2;
+    const startX = xOffset + (width - groupWidth) / 2;
     const logoScale = logoH / LOGO_VB.h;
     const logoY = y + (barHeight - logoH) / 2;
     const textX = startX + logoW + gapPx;
     const textY = y + barHeight / 2;
 
-    let s = '<rect x="0" y="' + y + '" width="' + canvasWidth + '" height="' + barHeight + '" fill="#ffffff"/>';
-    s += '<line x1="0" y1="' + (y + 0.5) + '" x2="' + canvasWidth + '" y2="' + (y + 0.5) + '" stroke="#e5e5e5" stroke-width="1"/>';
+    let s = '<line x1="' + xOffset + '" y1="' + (y + 0.5) + '" x2="' + (xOffset + width) + '" y2="' + (y + 0.5) + '" stroke="#e5e5e5" stroke-width="1"/>';
     s += '<g transform="translate(' + startX + ',' + logoY + ') scale(' + logoScale + ')">' +
       LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") + '</g>';
     s += '<text x="' + textX + '" y="' + textY + '" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="' +
@@ -1125,10 +1134,11 @@
 
   function exportSVG() {
     if (!items.length) return;
-    const containerWidth = previewState.containerWidth || MAX_CANVAS_W;
-    const layout = previewState.layout || computeJustifiedLayout(items, containerWidth);
+    const outerWidth = previewState.outerWidth || MAX_CANVAS_W;
+    const innerWidth = previewState.innerWidth || Math.max(100, outerWidth - PAD * 2);
+    const layout = previewState.layout || computeJustifiedLayout(items, innerWidth);
     const gridH = layout.canvasHeight;
-    const W = Math.round(containerWidth), H = Math.round(gridH + BAR_H);
+    const W = Math.round(outerWidth), H = Math.round(PAD + gridH + BAR_H + PAD);
 
     const parts = [];
     parts.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">');
@@ -1138,11 +1148,12 @@
       if (!item) continue;
       const dataUrl = imageToDataURL(item);
       const clipId = "clip" + p.id;
-      parts.push('<clipPath id="' + clipId + '"><rect x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + p.h + '" rx="10"/></clipPath>');
-      parts.push('<image href="' + dataUrl + '" x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + p.h +
+      const x = p.x + PAD, y = p.y + PAD;
+      parts.push('<clipPath id="' + clipId + '"><rect x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h + '" rx="10"/></clipPath>');
+      parts.push('<image href="' + dataUrl + '" x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h +
         '" preserveAspectRatio="xMidYMid meet" clip-path="url(#' + clipId + ')"/>');
     }
-    parts.push(buildBrandBarSVG(W, gridH, BAR_H));
+    parts.push(buildBrandBarSVG(PAD, innerWidth, PAD + gridH, BAR_H));
     parts.push("</svg>");
 
     const blob = new Blob([parts.join("")], { type: "image/svg+xml" });
