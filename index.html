@@ -106,6 +106,8 @@
   }
   .topbar-icon-btn:hover { background: #f2f2f2; color: var(--fg); }
   .topbar-icon-btn svg { width: 18px; height: 18px; }
+  .topbar-icon-btn:disabled { opacity: 0.35; cursor: default; }
+  .topbar-icon-btn:disabled:hover { background: none; color: var(--muted); }
 
   /* ---------- info modal ---------- */
   .info-overlay {
@@ -450,6 +452,12 @@
     background: var(--bg);
   }
 
+  .preview-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+  }
+
   .preview-scroll {
     flex: 1;
     overflow: auto;
@@ -670,8 +678,8 @@
         <button class="btn btn-ghost" id="addMoreBtnTop" hidden>Add images</button>
         <button class="btn btn-accent" id="clearAllBtn" disabled>Clear all</button>
       </div>
-      <button class="topbar-icon-btn" id="shareBtn" type="button" aria-label="Share">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.2M8.3 13.3l7.4 4.2"/></svg>
+      <button class="topbar-icon-btn" id="downloadBtn" type="button" aria-label="Download" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
       </button>
     </div>
   </header>
@@ -749,7 +757,12 @@
 <div class="preview-overlay" id="previewOverlay" hidden>
   <div class="preview-topbar">
     <span class="eyebrow">Preview</span>
-    <button class="btn" id="closePreviewBtn" type="button">Back to edit</button>
+    <div class="preview-topbar-right">
+      <button class="topbar-icon-btn" id="shareBtn" type="button" aria-label="Share">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.2M8.3 13.3l7.4 4.2"/></svg>
+      </button>
+      <button class="btn" id="closePreviewBtn" type="button">Back to edit</button>
+    </div>
   </div>
   <div class="preview-scroll" id="previewScroll">
     <div class="preview-card">
@@ -790,11 +803,18 @@
   const BAR_H = 88;             // branded bottom bar height, baked into exports
   const PAD = 40;               // outer padding around the preview/export canvas
   const DEFAULT_RADIUS = 10;    // default tile corner radius, user-adjustable
+  const SESSION_KEY = "bento_session_v1"; // sessionStorage token for the active tab session
+  const SESSION_MAX_EDGE = 1200; // downscale cap for autosaved thumbnails
+  const SESSION_QUALITY = 0.78;
   const PHI = 1.618033988749895; // golden ratio — drives the priority scale
   // Apple-style asymmetry, golden-ratio scale: each tier up is ~PHI times
   // more "important" than the one below it, so a hero pulls dramatically
   // more weight than a tall/standard/wide tile when rows are packed.
-  const PRIORITY_WEIGHT = { standard: 1, wide: 1, tall: PHI, hero: PHI * PHI };
+  // NOTE: "wide" used to share weight 1 with "standard", which meant pinning
+  // an image to "wide" via the size chip had zero effect on the layout —
+  // purely a cosmetic label change. Gave it its own step on the golden-ratio
+  // scale so every tier is now visibly, functionally distinct.
+  const PRIORITY_WEIGHT = { standard: 1, wide: Math.sqrt(PHI), tall: PHI, hero: PHI * PHI };
   const LOGO_VB = { w: 212, h: 401 };
   const LOGO_PATHS = [
     { d: "M38.689 48.3243H65.2758C69.9577 48.3243 73.8036 47.2096 76.8134 44.9801C79.8232 42.7506 81.3281 39.1276 81.3281 34.1113C81.3281 31.3244 80.8265 29.0392 79.8232 27.2556C78.8199 25.472 77.4822 24.0786 75.8101 23.0753C74.138 22.072 72.1872 21.4032 69.9577 21.0687C67.8397 20.6228 65.6102 20.3999 63.2692 20.3999H38.689V48.3243ZM12.4367 0H68.62C74.3052 0 79.4888 0.501637 84.1707 1.50491C88.8527 2.50818 92.8658 4.18031 96.21 6.52128C99.5542 8.75077 102.118 11.7606 103.902 15.5507C105.797 19.3409 106.744 24.0228 106.744 29.5966C106.744 35.6162 105.351 40.6326 102.564 44.6456C99.8887 48.6587 95.8756 51.9472 90.5248 54.5112C97.8821 56.6292 103.344 60.3636 106.912 65.7144C110.59 70.9537 112.43 77.3078 112.43 84.7766C112.43 90.7962 111.259 96.0355 108.918 100.495C106.577 104.842 103.4 108.409 99.387 111.196C95.4854 113.983 90.9707 116.045 85.8428 117.383C80.8265 118.721 75.6429 119.389 70.2921 119.389H12.4367V0ZM38.689 98.9896H66.7807C69.3446 98.9896 71.797 98.7667 74.138 98.3208C76.479 97.7634 78.5413 96.9273 80.3249 95.8126C82.1084 94.5864 83.5019 92.97 84.5051 90.9634C85.6199 88.9569 86.1773 86.393 86.1773 83.2717C86.1773 77.1405 84.4494 72.793 80.9937 70.2291C77.538 67.5537 72.9675 66.216 67.2823 66.216H38.689V98.9896Z", fill: "#000000" },
@@ -836,6 +856,7 @@
     infoOverlay: document.getElementById("infoOverlay"),
     closeInfoBtn: document.getElementById("closeInfoBtn"),
     shareBtn: document.getElementById("shareBtn"),
+    downloadBtn: document.getElementById("downloadBtn"),
     shareStoryOverlay: document.getElementById("shareStoryOverlay"),
     shareStoryBackdrop: document.getElementById("shareStoryBackdrop"),
     shareStoryPreview: document.getElementById("shareStoryPreview"),
@@ -907,7 +928,14 @@
     const typeMap = getEffectiveTypes(orderedItems);
     const claimWidth = item => BASE_H * (item.naturalW / item.naturalH) * PRIORITY_WEIGHT[typeMap.get(item.id)];
 
-    // Pass 1 — row membership, weighted by priority.
+    // Pass 1 — row membership, weighted by priority. If two items were
+    // explicitly paired (dragged to sit beside one another — see
+    // insertAdjacent), the pair is forced into the same row even when the
+    // greedy claim-width check would otherwise have split them; pass 2
+    // still solves that row's height from scratch afterwards, so the pair
+    // simply resizes to fit together rather than leaving a gap or cropping.
+    // The pairing only "sticks" while the two items remain adjacent in the
+    // array — later reorders that separate them let it lapse naturally.
     const rows = [];
     let currentRow = [];
     let currentClaim = 0;
@@ -918,8 +946,11 @@
         currentClaim = c;
         return;
       }
+      const prev = currentRow[currentRow.length - 1];
+      const forcedPair = (prev.keepWithId != null && prev.keepWithId === item.id) ||
+                          (item.keepWithId != null && item.keepWithId === prev.id);
       const claimIfAdded = currentClaim + GAP + c;
-      if (claimIfAdded > containerWidth) {
+      if (!forcedPair && claimIfAdded > containerWidth) {
         rows.push(currentRow);
         currentRow = [item];
         currentClaim = c;
@@ -1010,10 +1041,16 @@
       const cycleBtn = document.createElement("button");
       cycleBtn.className = "chip" + (item.overrideType ? " is-locked" : "");
       cycleBtn.textContent = opts.type;
-      cycleBtn.title = item.overrideType ? "Pinned — click to cycle size" : "Click to cycle size";
+      cycleBtn.title = item.overrideType ? "Pinned — click to cycle, or release to auto" : "Click to pin a size";
       cycleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        item.overrideType = nextType(opts.type);
+        // cycle standard -> wide -> tall -> hero -> auto (unpinned) -> ...
+        // previously "hero" had nowhere to go but back to a fixed label,
+        // permanently locking the tile out of automatic classification;
+        // now the 5th click releases the pin entirely. Checking the actual
+        // override (not the displayed type) so clicking an auto-assigned
+        // hero still pins it forward instead of silently doing nothing.
+        item.overrideType = (item.overrideType === "hero") ? null : nextType(opts.type);
         render();
       });
       bottomRow.appendChild(cycleBtn);
@@ -1043,7 +1080,12 @@
     els.landingView.hidden = currentView !== "landing";
     els.editorView.hidden = currentView !== "editor";
     els.topbarActions.hidden = currentView !== "editor";
+    // the landing screen already has its own large wordmark — no need to
+    // duplicate it in the header there too
+    els.logoHomeBtn.hidden = currentView === "landing";
+    els.downloadBtn.hidden = currentView !== "editor";
     if (currentView === "editor") render();
+    else scheduleSessionSave();
   }
 
   /* =========================================================
@@ -1055,6 +1097,7 @@
     els.populated.hidden = !hasItems;
     els.addMoreBtnTop.hidden = !hasItems;
     els.clearAllBtn.disabled = !hasItems;
+    scheduleSessionSave();
     if (!hasItems) {
       els.grid.innerHTML = "";
       els.grid.style.height = "0px";
@@ -1165,6 +1208,11 @@
     if (to === -1) { items.splice(from, 0, moved); return; }
     const insertBefore = edge === "left" || edge === "top";
     items.splice(insertBefore ? to : to + 1, 0, moved);
+    // remember this as a pair the layout should try to seat side by side —
+    // last pairing wins if either image gets paired again later
+    const target = items.find(it => it.id === targetId);
+    moved.keepWithId = targetId;
+    if (target) target.keepWithId = moved.id;
     render();
   }
 
@@ -1190,11 +1238,13 @@
         const item = {
           id: nextId++,
           file,
+          fileType: file.type,
           url,
           naturalW: img.naturalWidth,
           naturalH: img.naturalHeight,
           aspectClass: classifyAspect(img.naturalWidth, img.naturalHeight),
           overrideType: null,
+          keepWithId: null,
           _img: img,
         };
         items.push(item);
@@ -1211,7 +1261,99 @@
   function clearAll() {
     items.forEach(it => URL.revokeObjectURL(it.url));
     items = [];
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (_) {}
     render();
+  }
+
+  /* =========================================================
+     SESSION PERSISTENCE — autosaves the working grid to
+     sessionStorage (a per-tab token, cleared when the tab
+     closes) so that hitting the mobile back button — or a slow
+     export making it look stuck — doesn't wipe out someone's
+     upload progress. Only a downscaled JPEG thumbnail of each
+     photo is stored (not the original file), since sessionStorage
+     has a small quota; this is a best-effort safety net, not a
+     backup — full-resolution originals are gone once the tab
+     itself is closed, exactly as before.
+     ========================================================= */
+  async function getSessionThumb(item) {
+    if (item._sessionThumb) return item._sessionThumb;
+    try {
+      const img = await getLoadedImage(item);
+      const scale = Math.min(1, SESSION_MAX_EDGE / Math.max(item.naturalW, item.naturalH, 1));
+      const w = Math.max(1, Math.round(item.naturalW * scale));
+      const h = Math.max(1, Math.round(item.naturalH * scale));
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      item._sessionThumb = c.toDataURL("image/jpeg", SESSION_QUALITY);
+      return item._sessionThumb;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  let sessionSaveTimer = null;
+  function scheduleSessionSave() {
+    clearTimeout(sessionSaveTimer);
+    sessionSaveTimer = setTimeout(persistSession, 450);
+  }
+
+  async function persistSession() {
+    try {
+      if (!items.length) { sessionStorage.removeItem(SESSION_KEY); return; }
+      const serialized = [];
+      for (const it of items) {
+        const thumb = await getSessionThumb(it);
+        if (!thumb) continue;
+        serialized.push({
+          id: it.id,
+          url: thumb,
+          naturalW: it.naturalW,
+          naturalH: it.naturalH,
+          aspectClass: it.aspectClass,
+          overrideType: it.overrideType || null,
+          keepWithId: it.keepWithId || null,
+          fileType: (it.file && it.file.type) || it.fileType || "image/jpeg",
+        });
+      }
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+        v: 1, cornerRadius, currentView, items: serialized,
+      }));
+    } catch (_) {
+      // quota exceeded or storage unavailable — autosave is best-effort only
+    }
+  }
+
+  function restoreSession() {
+    let raw;
+    try { raw = sessionStorage.getItem(SESSION_KEY); } catch (_) { return false; }
+    if (!raw) return false;
+    let data;
+    try { data = JSON.parse(raw); } catch (_) { return false; }
+    if (!data || !Array.isArray(data.items) || !data.items.length) return false;
+
+    let maxId = 0;
+    items = data.items.map(rec => {
+      maxId = Math.max(maxId, Number(rec.id) || 0);
+      return {
+        id: rec.id,
+        file: null,
+        fileType: rec.fileType || "image/jpeg",
+        url: rec.url,
+        naturalW: rec.naturalW,
+        naturalH: rec.naturalH,
+        aspectClass: rec.aspectClass,
+        overrideType: rec.overrideType || null,
+        keepWithId: rec.keepWithId || null,
+        _img: null,
+        _sessionThumb: rec.url,
+      };
+    });
+    nextId = maxId + 1;
+    if (typeof data.cornerRadius === "number") cornerRadius = data.cornerRadius;
+    currentView = "editor";
+    return true;
   }
 
   /* =========================================================
@@ -1372,7 +1514,12 @@
   async function exportPNG() {
     if (!items.length) return;
     const canvas = await buildExportCanvas();
-    canvas.toBlob(blob => downloadBlob(blob, "bento-grid.png"), "image/png");
+    await new Promise(resolve => {
+      canvas.toBlob(async blob => {
+        if (blob) await downloadBlob(blob, "bento-grid.png");
+        resolve();
+      }, "image/png");
+    });
   }
 
   function buildBrandBarSVG(xOffset, width, y, barHeight) {
@@ -1401,18 +1548,22 @@
     return s;
   }
 
-  function imageToDataURL(item) {
+  async function imageToDataURL(item) {
+    // restored items (loaded back from the session cache after a reload)
+    // don't have a live File object or a preloaded _img yet — load fresh
+    // from item.url either way rather than assuming either is present.
+    const img = await getLoadedImage(item);
     const c = document.createElement("canvas");
     c.width = item.naturalW;
     c.height = item.naturalH;
     const ctx = c.getContext("2d");
-    const img = item._img;
     ctx.drawImage(img, 0, 0, item.naturalW, item.naturalH);
-    const mime = /png/.test(item.file.type) ? "image/png" : "image/jpeg";
+    const type = (item.file && item.file.type) || item.fileType || "image/jpeg";
+    const mime = /png/.test(type) ? "image/png" : "image/jpeg";
     return c.toDataURL(mime, 0.92);
   }
 
-  function exportSVG() {
+  async function exportSVG() {
     if (!items.length) return;
     const outerWidth = previewState.outerWidth || MAX_CANVAS_W;
     const innerWidth = previewState.innerWidth || Math.max(100, outerWidth - PAD * 2);
@@ -1426,7 +1577,7 @@
     for (const p of layout.placed) {
       const item = items.find(it => it.id === p.id);
       if (!item) continue;
-      const dataUrl = imageToDataURL(item);
+      const dataUrl = await imageToDataURL(item);
       const clipId = "clip" + p.id;
       const x = p.x + PAD, y = p.y + PAD;
       parts.push('<clipPath id="' + clipId + '"><rect x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h + '" rx="' + cornerRadius + '"/></clipPath>');
@@ -1437,7 +1588,7 @@
     parts.push("</svg>");
 
     const blob = new Blob([parts.join("")], { type: "image/svg+xml" });
-    downloadBlob(blob, "bento-grid.svg");
+    await downloadBlob(blob, "bento-grid.svg");
   }
 
   async function exportPDF() {
@@ -1454,11 +1605,33 @@
       format: [canvas.width, canvas.height],
     });
     doc.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, canvas.width, canvas.height);
-    doc.save("bento-grid.pdf");
-    showToast("Exported bento-grid.pdf");
+    // route through downloadBlob (not jsPDF's own .save(), which is just an
+    // <a download> click under the hood) so mobile gets the same reliable
+    // share-sheet path as PNG/SVG instead of a silently-failing download
+    const blob = doc.output("blob");
+    await downloadBlob(blob, "bento-grid.pdf");
   }
 
-  function downloadBlob(blob, filename) {
+  function isTouchDevice() {
+    return (navigator.maxTouchPoints || 0) > 0 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  }
+
+  async function downloadBlob(blob, filename) {
+    // A plain <a download> click is unreliable on mobile: iOS Safari has
+    // been flaky about it historically, and virtually every in-app webview
+    // (Instagram, Twitter, etc.) silently swallows it. The OS share sheet
+    // (Save Image / Save to Files) is the reliable path there, so prefer
+    // it on touch devices and fall back to the anchor-download otherwise.
+    if (isTouchDevice() && navigator.canShare) {
+      try {
+        const file = new File([blob], filename, { type: blob.type });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          showToast("Exported " + filename);
+          return;
+        }
+      } catch (_) { /* cancelled or unsupported — fall through to direct download */ }
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1466,7 +1639,7 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
     showToast("Exported " + filename);
   }
 
@@ -1515,13 +1688,9 @@
         const scale = Math.min(cw / NOM_W, ch / layout.canvasHeight, 1);
         stage.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
       });
-    } else {
-      const ph = document.createElement("div");
-      ph.className = "share-story-placeholder";
-      ph.innerHTML = '<svg viewBox="0 0 212 401" xmlns="http://www.w3.org/2000/svg">' +
-        LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") + '</svg>';
-      content.appendChild(ph);
     }
+    // no images yet: leave the content area blank (matching TypedUp's
+    // card) instead of a second, faded logo mark — one logo, top only.
     preview.appendChild(content);
 
     const footer = document.createElement("div");
@@ -1602,13 +1771,10 @@
         ctx.drawImage(img, dx, dy, dw, dh);
         ctx.restore();
       }
-    } else {
-      const markH = contentH * 0.46;
-      const markImg = await getLogoImage(Math.round(markH));
-      ctx.globalAlpha = 0.13;
-      ctx.drawImage(markImg, contentX + (contentW - markImg.width) / 2, contentTop + (contentH - markH) / 2, markImg.width, markH);
-      ctx.globalAlpha = 1;
     }
+    // no images yet: leave the content area as the plain #fafafa fill
+    // already drawn above — matching TypedUp's card, and avoiding a
+    // second logo mark showing up alongside the real one at the top.
 
     ctx.restore(); // end content clip
 
@@ -1636,6 +1802,7 @@
 
   async function shareStory() {
     els.shareStoryBtn.disabled = true;
+    showToast("Preparing your story…");
     try {
       const canvas = await buildShareStoryCanvas();
       canvas.toBlob(async (blob) => {
@@ -1722,20 +1889,38 @@
   els.shareStoryCloseBtn.addEventListener("click", closeShareStory);
   els.shareStoryBackdrop.addEventListener("click", closeShareStory);
   els.shareStoryBtn.addEventListener("click", shareStory);
+  els.downloadBtn.addEventListener("click", () => {
+    if (!items.length) { showToast("Add some images first"); return; }
+    runExport(els.downloadBtn, "PNG", exportPNG);
+  });
 
-  els.radiusSlider.value = String(cornerRadius);
-  document.documentElement.style.setProperty("--radius", cornerRadius + "px");
   els.radiusSlider.addEventListener("input", (e) => {
     cornerRadius = Number(e.target.value);
     document.documentElement.style.setProperty("--radius", cornerRadius + "px");
+    scheduleSessionSave();
   });
+
+  // wraps a slow export in a disabled/"Preparing…" state so it never looks
+  // stuck — this was the main reason people hit the back button mid-export
+  async function runExport(btn, label, fn) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    showToast("Preparing your " + label + "…");
+    try {
+      await fn();
+    } catch (_) {
+      showToast("Couldn't build the " + label + " — try again");
+    } finally {
+      btn.disabled = false;
+    }
+  }
 
   els.clearAllBtn.addEventListener("click", clearAll);
   els.previewBtn.addEventListener("click", openPreview);
   els.closePreviewBtn.addEventListener("click", closePreview);
-  els.exportPngBtn.addEventListener("click", exportPNG);
-  els.exportSvgBtn.addEventListener("click", exportSVG);
-  els.exportPdfBtn.addEventListener("click", exportPDF);
+  els.exportPngBtn.addEventListener("click", () => runExport(els.exportPngBtn, "PNG", exportPNG));
+  els.exportSvgBtn.addEventListener("click", () => runExport(els.exportSvgBtn, "SVG", exportSVG));
+  els.exportPdfBtn.addEventListener("click", () => runExport(els.exportPdfBtn, "PDF", exportPDF));
 
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
@@ -1771,7 +1956,11 @@
     if (!els.shareStoryOverlay.hidden) buildShareStoryPreview();
   }, 150));
 
+  const wasRestored = restoreSession();
+  els.radiusSlider.value = String(cornerRadius);
+  document.documentElement.style.setProperty("--radius", cornerRadius + "px");
   showView();
+  if (wasRestored) showToast("Restored your last session");
 })();
 </script>
 </body>
