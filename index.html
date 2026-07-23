@@ -627,6 +627,12 @@
     align-items: center;
     gap: 1.1rem;
   }
+  /* Full-bleed white story card — logo + link sit in their own cluster
+     with a lot of open air above and below, not pinned to the top; a
+     content snapshot (when there are images) fills the space between
+     that cluster and the footer, which stays pinned near the bottom.
+     This mirrors TypedUp/COLOR's actual exported story image, not a
+     cropped/padded "app card" version of it. */
   .share-story-preview {
     width: min(70vw, 270px);
     aspect-ratio: 9 / 16;
@@ -636,24 +642,26 @@
     box-shadow: 0 24px 60px #0000008c;
     display: flex;
     flex-direction: column;
-    padding: 1.6rem 1.3rem 1.1rem;
+    padding: 0 1.2rem 1.3rem;
   }
-  .share-story-logo svg { height: 30px; width: auto; display: block; margin: 0 auto 0.65rem; }
+  .share-story-spacer-top { flex: 0.85 0 0; }
+  .share-story-brand { flex: none; text-align: center; }
+  .share-story-logo svg { height: 26px; width: auto; display: block; margin: 0 auto 0.55rem; }
   .share-story-link {
     text-align: center;
-    font-size: 0.68rem;
+    font-size: 0.66rem;
     font-weight: 700;
   }
   .share-story-link .domain { color: #a1a1a1; }
   .share-story-link .path { color: var(--accent); }
   .share-story-content {
     position: relative;
-    flex: 1;
-    margin-top: 0.9rem;
+    flex: 1.25 1 0;
+    margin-top: 0.5rem;
     overflow: hidden;
     border-radius: 8px;
-    background: #fafafa;
   }
+  .share-story-content.has-snapshot { background: #fafafa; }
   .share-story-stage {
     position: absolute;
     top: 50%;
@@ -661,18 +669,10 @@
     transform: translate(-50%, -50%);
   }
   .share-story-stage .tile { transition: none; }
-  .share-story-placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .share-story-placeholder svg { width: 42%; height: auto; opacity: 0.14; }
   .share-story-footer {
-    margin-top: 0.7rem;
+    flex: none;
     text-align: center;
-    font-size: 0.54rem;
+    font-size: 0.5rem;
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -1818,21 +1818,31 @@
     const preview = els.shareStoryPreview;
     preview.innerHTML = "";
 
+    // top spacer — the logo/link cluster sits below a lot of open air,
+    // roughly a third of the way down, matching TypedUp/COLOR's actual
+    // exported story image rather than being pinned to the top edge
+    preview.appendChild(document.createElement("div")).className = "share-story-spacer-top";
+
+    const brand = document.createElement("div");
+    brand.className = "share-story-brand";
+
     const logoWrap = document.createElement("div");
     logoWrap.className = "share-story-logo";
     logoWrap.innerHTML = '<svg viewBox="0 0 333 256" xmlns="http://www.w3.org/2000/svg">' +
       LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"' + (p.fillRule ? ' fill-rule="' + p.fillRule + '" clip-rule="' + p.fillRule + '"' : '') + '/>').join("") + '</svg>';
-    preview.appendChild(logoWrap);
+    brand.appendChild(logoWrap);
 
     const link = document.createElement("div");
     link.className = "share-story-link";
     link.innerHTML = '<span class="domain">ahfos.github.io/</span><span class="path">bento</span>';
-    preview.appendChild(link);
+    brand.appendChild(link);
+    preview.appendChild(brand);
 
     const content = document.createElement("div");
     content.className = "share-story-content";
 
     if (items.length) {
+      content.classList.add("has-snapshot");
       const NOM_W = 900;
       const layout = computeJustifiedLayout(items, NOM_W);
       const stage = document.createElement("div");
@@ -1852,8 +1862,9 @@
         stage.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
       });
     }
-    // no images yet: leave the content area blank (matching TypedUp's
-    // card) instead of a second, faded logo mark — one logo, top only.
+    // no images yet: leave the content area plain white — matching
+    // TypedUp/COLOR's card, which is just open space at that point, not
+    // a visible placeholder box
     preview.appendChild(content);
 
     const footer = document.createElement("div");
@@ -1862,60 +1873,49 @@
     preview.appendChild(footer);
   }
 
+  // Full-bleed white 1080x1920 story image — this is the literal file that
+  // gets shared/downloaded, not a mockup of an app card, so it should look
+  // like TypedUp/COLOR's actual output: plain white edge to edge, the
+  // logo+link cluster sitting in open space roughly a third of the way
+  // down (not pinned to the top), and "MADE BY AHFOS" resting near the
+  // bottom with real margin under it.
   async function buildShareStoryCanvas(onProgress) {
     const W = 1080, H = 1920;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#0a0a0a";
+    ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
 
-    const cardW = Math.round(W * 0.72);
-    const cardH = Math.round(cardW * (16 / 9));
-    const cardX = Math.round((W - cardW) / 2);
-    const cardY = Math.round((H - cardH) / 2);
-    const cardR = cardW * 0.06;
+    const padX = W * 0.11;
+    let cursorY = H * 0.355;
 
-    ctx.save();
-    roundedRectPath(ctx, cardX, cardY, cardW, cardH, cardR);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
-    ctx.save();
-    roundedRectPath(ctx, cardX, cardY, cardW, cardH, cardR);
-    ctx.clip();
-
-    const padX = cardW * 0.095;
-    let cursorY = cardY + cardH * 0.085;
-
-    const logoH = cardW * 0.15;
+    const logoH = W * 0.115;
     const logoImg = await getLogoImage(Math.round(logoH));
-    ctx.drawImage(logoImg, cardX + (cardW - logoImg.width) / 2, cursorY, logoImg.width, logoH);
-    cursorY += logoH + cardH * 0.028;
+    ctx.drawImage(logoImg, (W - logoImg.width) / 2, cursorY, logoImg.width, logoH);
+    cursorY += logoH + H * 0.018;
 
-    const fontSize = Math.round(cardW * 0.05);
+    const fontSize = Math.round(W * 0.038);
     ctx.font = '700 ' + fontSize + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
     ctx.textBaseline = "alphabetic";
     const domainText = "ahfos.github.io/";
     const pathText = "bento";
     const domainW = ctx.measureText(domainText).width;
     const pathW = ctx.measureText(pathText).width;
-    let tx = cardX + (cardW - (domainW + pathW)) / 2;
+    let tx = (W - (domainW + pathW)) / 2;
     const ty = cursorY + fontSize * 0.78;
     ctx.fillStyle = "#a1a1a1";
     ctx.fillText(domainText, tx, ty);
     tx += domainW;
     ctx.fillStyle = "#c41e24";
     ctx.fillText(pathText, tx, ty);
-    cursorY = ty + cardH * 0.045;
+    cursorY = ty + H * 0.03;
 
     const contentTop = cursorY;
-    const contentBottom = cardY + cardH * 0.905;
+    const contentBottom = H * 0.87;
     const contentH = Math.max(1, contentBottom - contentTop);
-    const contentW = cardW - padX * 2;
-    const contentX = cardX + padX;
-
-    ctx.fillStyle = "#fafafa";
-    ctx.fillRect(contentX, contentTop, contentW, contentH);
+    const contentW = W - padX * 2;
+    const contentX = padX;
 
     if (items.length) {
       const layout = computeJustifiedLayout(items, contentW);
@@ -1940,20 +1940,16 @@
         if (onProgress) onProgress(0.1 + (done / total) * 0.55);
       }
     }
-    // no images yet: leave the content area as the plain #fafafa fill
-    // already drawn above — matching TypedUp's card, and avoiding a
-    // second logo mark showing up alongside the real one at the top.
+    // no images yet: leave that space as plain white, exactly like
+    // TypedUp/COLOR's card — no placeholder box, no second logo mark
 
-    ctx.restore(); // end content clip
-
-    const footerFontSize = Math.round(cardW * 0.023);
+    const footerFontSize = Math.round(W * 0.017);
     ctx.font = '700 ' + footerFontSize + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
     ctx.fillStyle = "#d2d2d2";
     ctx.textAlign = "center";
-    ctx.fillText("MADE BY AHFOS", cardX + cardW / 2, cardY + cardH - cardH * 0.04);
+    ctx.fillText("MADE BY AHFOS", W / 2, H * 0.935);
     ctx.textAlign = "left";
 
-    ctx.restore(); // end card clip
     return canvas;
   }
 
