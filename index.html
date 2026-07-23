@@ -350,6 +350,24 @@
     pointer-events: none;
   }
 
+  /* edge indicators: dropping beside a tile inserts adjacent instead of
+     swapping, so the two images end up sharing a row where possible */
+  .tile.drop-target-left::after,
+  .tile.drop-target-right::after,
+  .tile.drop-target-top::after,
+  .tile.drop-target-bottom::after {
+    content: "";
+    position: absolute;
+    background: var(--accent);
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .tile.drop-target-left::after { left: 0; top: 6%; bottom: 6%; width: 4px; }
+  .tile.drop-target-right::after { right: 0; top: 6%; bottom: 6%; width: 4px; }
+  .tile.drop-target-top::after { top: 0; left: 6%; right: 6%; height: 4px; }
+  .tile.drop-target-bottom::after { bottom: 0; left: 6%; right: 6%; height: 4px; }
+
   .tile-overlay {
     position: absolute;
     inset: 0;
@@ -532,6 +550,101 @@
     z-index: 200;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- share to story ---------- */
+  .share-story-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 180;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+  .share-story-backdrop {
+    position: absolute;
+    inset: 0;
+    background: #0a0a0ae0;
+  }
+  .share-story-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.1rem;
+  }
+  .share-story-preview {
+    width: min(70vw, 270px);
+    aspect-ratio: 9 / 16;
+    border-radius: 0.9rem;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: 0 24px 60px #0000008c;
+    display: flex;
+    flex-direction: column;
+    padding: 1.6rem 1.3rem 1.1rem;
+  }
+  .share-story-logo svg { height: 30px; width: auto; display: block; margin: 0 auto 0.65rem; }
+  .share-story-link {
+    text-align: center;
+    font-size: 0.68rem;
+    font-weight: 700;
+  }
+  .share-story-link .domain { color: #a1a1a1; }
+  .share-story-link .path { color: var(--accent); }
+  .share-story-content {
+    position: relative;
+    flex: 1;
+    margin-top: 0.9rem;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #fafafa;
+  }
+  .share-story-stage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .share-story-stage .tile { transition: none; }
+  .share-story-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .share-story-placeholder svg { width: 42%; height: auto; opacity: 0.14; }
+  .share-story-footer {
+    margin-top: 0.7rem;
+    text-align: center;
+    font-size: 0.54rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #d2d2d2;
+  }
+  .share-story-btn {
+    width: min(70vw, 270px);
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.85rem 1.6rem;
+    border-radius: 999px;
+    background: #f4cfcf;
+    color: #7a1418;
+    transition: background var(--transition-fast), opacity var(--transition-fast);
+  }
+  .share-story-btn:hover { background: #eebcbc; }
+  .share-story-btn:disabled { opacity: 0.55; cursor: default; }
+  .share-story-close {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #ffffffa8;
+  }
+  .share-story-close:hover { color: #ffffff; }
 </style>
 </head>
 <body>
@@ -650,6 +763,16 @@
   </div>
 </div>
 
+<!-- Share to story -->
+<div class="share-story-overlay" id="shareStoryOverlay" hidden>
+  <div class="share-story-backdrop" id="shareStoryBackdrop"></div>
+  <div class="share-story-panel">
+    <div class="share-story-preview" id="shareStoryPreview"></div>
+    <button class="share-story-btn" id="shareStoryBtn" type="button">Share to Instagram Story</button>
+    <button class="share-story-close" id="shareStoryCloseBtn" type="button">Close</button>
+  </div>
+</div>
+
 <input type="file" id="fileInput" class="sr-only" accept="image/png,image/jpeg,image/webp" multiple>
 <div class="toast" id="toast"></div>
 
@@ -713,6 +836,11 @@
     infoOverlay: document.getElementById("infoOverlay"),
     closeInfoBtn: document.getElementById("closeInfoBtn"),
     shareBtn: document.getElementById("shareBtn"),
+    shareStoryOverlay: document.getElementById("shareStoryOverlay"),
+    shareStoryBackdrop: document.getElementById("shareStoryBackdrop"),
+    shareStoryPreview: document.getElementById("shareStoryPreview"),
+    shareStoryBtn: document.getElementById("shareStoryBtn"),
+    shareStoryCloseBtn: document.getElementById("shareStoryCloseBtn"),
     previewOverlay: document.getElementById("previewOverlay"),
     previewScroll: document.getElementById("previewScroll"),
     previewCanvas: document.getElementById("previewCanvas"),
@@ -951,9 +1079,30 @@
   /* =========================================================
      STEP D — reorder via native HTML5 drag & drop
      Reordering just mutates the `items` array and re-renders;
-     computeJustifiedLayout() is re-run from scratch every time.
+     computeJustifiedLayout() is re-run from scratch every time,
+     which is what guarantees zero empty space and untouched
+     aspect ratios no matter how the array gets shuffled.
+
+     Two drop zones per tile:
+       - center ("swap" zone) — drop an image directly on top of
+         another and the two simply trade places.
+       - edges ("insert" zone) — drop beside a tile's left/right/
+         top/bottom edge and the dragged image is removed and
+         re-inserted immediately before/after that tile, which is
+         how you ask the row-packer to try to seat them together.
+         The justified layout still decides per row whether they
+         actually fit shoulder-to-shoulder (resizing that row's
+         height so they do, whenever the combined width allows)
+         or spill to the next row — it never crops and never
+         leaves a gap either way.
      ========================================================= */
   let dragSourceId = null;
+  let dropZoneInfo = null; // { targetId, mode: "swap" | "insert", edge? }
+  const EDGE_CLASSES = ["drop-target", "drop-target-left", "drop-target-right", "drop-target-top", "drop-target-bottom"];
+
+  function clearDropIndicators() {
+    document.querySelectorAll(".tile." + EDGE_CLASSES.join(", .tile.")).forEach(t => t.classList.remove(...EDGE_CLASSES));
+  }
 
   function wireDragEvents(tile, id) {
     tile.addEventListener("dragstart", (e) => {
@@ -964,29 +1113,58 @@
     });
     tile.addEventListener("dragend", () => {
       tile.classList.remove("dragging");
-      document.querySelectorAll(".tile.drop-target").forEach(t => t.classList.remove("drop-target"));
+      clearDropIndicators();
+      dropZoneInfo = null;
     });
     tile.addEventListener("dragover", (e) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
-      tile.classList.add("drop-target");
+      if (dragSourceId === null || dragSourceId === id) return;
+      const rect = tile.getBoundingClientRect();
+      const dx = rect.width ? (e.clientX - rect.left) / rect.width : 0.5;
+      const dy = rect.height ? (e.clientY - rect.top) / rect.height : 0.5;
+      clearDropIndicators();
+      if (dx >= 0.28 && dx <= 0.72 && dy >= 0.28 && dy <= 0.72) {
+        tile.classList.add("drop-target");
+        dropZoneInfo = { targetId: id, mode: "swap" };
+      } else {
+        const distances = { left: dx, right: 1 - dx, top: dy, bottom: 1 - dy };
+        const edge = Object.keys(distances).reduce((a, b) => distances[a] <= distances[b] ? a : b);
+        tile.classList.add("drop-target-" + edge);
+        dropZoneInfo = { targetId: id, mode: "insert", edge };
+      }
     });
-    tile.addEventListener("dragleave", () => tile.classList.remove("drop-target"));
+    tile.addEventListener("dragleave", (e) => {
+      if (!tile.contains(e.relatedTarget)) clearDropIndicators();
+    });
     tile.addEventListener("drop", (e) => {
       e.preventDefault();
-      tile.classList.remove("drop-target");
-      if (dragSourceId === null || dragSourceId === id) return;
-      reorder(dragSourceId, id);
+      clearDropIndicators();
+      const info = dropZoneInfo;
+      dropZoneInfo = null;
+      if (dragSourceId === null || dragSourceId === id || !info) { dragSourceId = null; return; }
+      if (info.mode === "swap") swapItems(dragSourceId, id);
+      else insertAdjacent(dragSourceId, id, info.edge);
       dragSourceId = null;
     });
   }
 
-  function reorder(sourceId, targetId) {
+  function swapItems(sourceId, targetId) {
     const from = items.findIndex(it => it.id === sourceId);
     const to = items.findIndex(it => it.id === targetId);
     if (from === -1 || to === -1) return;
+    [items[from], items[to]] = [items[to], items[from]];
+    render();
+  }
+
+  function insertAdjacent(sourceId, targetId, edge) {
+    const from = items.findIndex(it => it.id === sourceId);
+    if (from === -1) return;
     const [moved] = items.splice(from, 1);
-    items.splice(to, 0, moved);
+    const to = items.findIndex(it => it.id === targetId);
+    if (to === -1) { items.splice(from, 0, moved); return; }
+    const insertBefore = edge === "left" || edge === "top";
+    items.splice(insertBefore ? to : to + 1, 0, moved);
     render();
   }
 
@@ -1293,6 +1471,193 @@
   }
 
   /* =========================================================
+     SHARE TO STORY — a vertical story card (matching TypedUp /
+     COLOR's pattern): logo, hyperlink-styled site path, a live
+     snapshot of the current grid, "Made by Ahfos" footer. The
+     DOM version below drives the on-screen preview; a matching
+     canvas version (buildShareStoryCanvas) renders the same card
+     for the actual Web Share / download action.
+     ========================================================= */
+  function buildShareStoryPreview() {
+    const preview = els.shareStoryPreview;
+    preview.innerHTML = "";
+
+    const logoWrap = document.createElement("div");
+    logoWrap.className = "share-story-logo";
+    logoWrap.innerHTML = '<svg viewBox="0 0 212 401" xmlns="http://www.w3.org/2000/svg">' +
+      LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") + '</svg>';
+    preview.appendChild(logoWrap);
+
+    const link = document.createElement("div");
+    link.className = "share-story-link";
+    link.innerHTML = '<span class="domain">ahfos.github.io/</span><span class="path">bento</span>';
+    preview.appendChild(link);
+
+    const content = document.createElement("div");
+    content.className = "share-story-content";
+
+    if (items.length) {
+      const NOM_W = 400;
+      const layout = computeJustifiedLayout(items, NOM_W);
+      const stage = document.createElement("div");
+      stage.className = "share-story-stage";
+      stage.style.width = NOM_W + "px";
+      stage.style.height = layout.canvasHeight + "px";
+      layout.placed.forEach(p => {
+        const item = items.find(it => it.id === p.id);
+        if (!item) return;
+        stage.appendChild(buildTileEl(item, p, { interactive: false }));
+      });
+      content.appendChild(stage);
+      requestAnimationFrame(() => {
+        const cw = content.clientWidth, ch = content.clientHeight;
+        if (!cw || !ch || !layout.canvasHeight) return;
+        const scale = Math.min(cw / NOM_W, ch / layout.canvasHeight, 1);
+        stage.style.transform = "translate(-50%, -50%) scale(" + scale + ")";
+      });
+    } else {
+      const ph = document.createElement("div");
+      ph.className = "share-story-placeholder";
+      ph.innerHTML = '<svg viewBox="0 0 212 401" xmlns="http://www.w3.org/2000/svg">' +
+        LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") + '</svg>';
+      content.appendChild(ph);
+    }
+    preview.appendChild(content);
+
+    const footer = document.createElement("div");
+    footer.className = "share-story-footer";
+    footer.textContent = "MADE BY AHFOS";
+    preview.appendChild(footer);
+  }
+
+  async function buildShareStoryCanvas() {
+    const W = 1080, H = 1920;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0, 0, W, H);
+
+    const cardW = Math.round(W * 0.72);
+    const cardH = Math.round(cardW * (16 / 9));
+    const cardX = Math.round((W - cardW) / 2);
+    const cardY = Math.round((H - cardH) / 2);
+    const cardR = cardW * 0.06;
+
+    ctx.save();
+    roundedRectPath(ctx, cardX, cardY, cardW, cardH, cardR);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.save();
+    roundedRectPath(ctx, cardX, cardY, cardW, cardH, cardR);
+    ctx.clip();
+
+    const padX = cardW * 0.095;
+    let cursorY = cardY + cardH * 0.085;
+
+    const logoH = cardW * 0.15;
+    const logoImg = await getLogoImage(Math.round(logoH));
+    ctx.drawImage(logoImg, cardX + (cardW - logoImg.width) / 2, cursorY, logoImg.width, logoH);
+    cursorY += logoH + cardH * 0.028;
+
+    const fontSize = Math.round(cardW * 0.05);
+    ctx.font = '700 ' + fontSize + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
+    ctx.textBaseline = "alphabetic";
+    const domainText = "ahfos.github.io/";
+    const pathText = "bento";
+    const domainW = ctx.measureText(domainText).width;
+    const pathW = ctx.measureText(pathText).width;
+    let tx = cardX + (cardW - (domainW + pathW)) / 2;
+    const ty = cursorY + fontSize * 0.78;
+    ctx.fillStyle = "#a1a1a1";
+    ctx.fillText(domainText, tx, ty);
+    tx += domainW;
+    ctx.fillStyle = "#c41e24";
+    ctx.fillText(pathText, tx, ty);
+    cursorY = ty + cardH * 0.045;
+
+    const contentTop = cursorY;
+    const contentBottom = cardY + cardH * 0.905;
+    const contentH = Math.max(1, contentBottom - contentTop);
+    const contentW = cardW - padX * 2;
+    const contentX = cardX + padX;
+
+    ctx.fillStyle = "#fafafa";
+    ctx.fillRect(contentX, contentTop, contentW, contentH);
+
+    if (items.length) {
+      const layout = computeJustifiedLayout(items, contentW);
+      const scale = layout.canvasHeight ? Math.min(1, contentH / layout.canvasHeight) : 1;
+      const drawW = contentW * scale, drawH = layout.canvasHeight * scale;
+      const offX = contentX + (contentW - drawW) / 2;
+      const offY = contentTop + (contentH - drawH) / 2;
+      for (const p of layout.placed) {
+        const item = items.find(it => it.id === p.id);
+        if (!item) continue;
+        const img = await getLoadedImage(item);
+        const dx = offX + p.x * scale, dy = offY + p.y * scale, dw = p.w * scale, dh = p.h * scale;
+        ctx.save();
+        roundedRectPath(ctx, dx, dy, dw, dh, 6 * scale);
+        ctx.clip();
+        ctx.drawImage(img, dx, dy, dw, dh);
+        ctx.restore();
+      }
+    } else {
+      const markH = contentH * 0.46;
+      const markImg = await getLogoImage(Math.round(markH));
+      ctx.globalAlpha = 0.13;
+      ctx.drawImage(markImg, contentX + (contentW - markImg.width) / 2, contentTop + (contentH - markH) / 2, markImg.width, markH);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore(); // end content clip
+
+    const footerFontSize = Math.round(cardW * 0.023);
+    ctx.font = '700 ' + footerFontSize + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
+    ctx.fillStyle = "#d2d2d2";
+    ctx.textAlign = "center";
+    ctx.fillText("MADE BY AHFOS", cardX + cardW / 2, cardY + cardH - cardH * 0.04);
+    ctx.textAlign = "left";
+
+    ctx.restore(); // end card clip
+    return canvas;
+  }
+
+  function openShareStory() {
+    buildShareStoryPreview();
+    els.shareStoryOverlay.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeShareStory() {
+    els.shareStoryOverlay.hidden = true;
+    document.body.style.overflow = "";
+  }
+
+  async function shareStory() {
+    els.shareStoryBtn.disabled = true;
+    try {
+      const canvas = await buildShareStoryCanvas();
+      canvas.toBlob(async (blob) => {
+        if (!blob) { showToast("Couldn't build image"); els.shareStoryBtn.disabled = false; return; }
+        const file = new File([blob], "bento-story.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: "BENTO", text: "Turn your photos into an instant, no-crop bento grid." });
+            els.shareStoryBtn.disabled = false;
+            return;
+          } catch (_) { /* cancelled or unsupported — fall through to download */ }
+        }
+        downloadBlob(blob, "bento-story.png");
+        els.shareStoryBtn.disabled = false;
+      }, "image/png");
+    } catch (_) {
+      showToast("Couldn't build share image");
+      els.shareStoryBtn.disabled = false;
+    }
+  }
+
+  /* =========================================================
      TOAST
      ========================================================= */
   let toastTimer = null;
@@ -1353,25 +1718,10 @@
     if (e.target === els.infoOverlay) els.infoOverlay.hidden = true;
   });
 
-  els.shareBtn.addEventListener("click", async () => {
-    const shareData = {
-      title: "BENTO",
-      text: "Turn your photos into an instant, no-crop bento grid.",
-      url: location.href,
-    };
-    if (navigator.share) {
-      try { await navigator.share(shareData); } catch (_) { /* user cancelled */ }
-      return;
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(shareData.url);
-        showToast("Link copied");
-        return;
-      } catch (_) { /* fall through */ }
-    }
-    showToast(shareData.url);
-  });
+  els.shareBtn.addEventListener("click", openShareStory);
+  els.shareStoryCloseBtn.addEventListener("click", closeShareStory);
+  els.shareStoryBackdrop.addEventListener("click", closeShareStory);
+  els.shareStoryBtn.addEventListener("click", shareStory);
 
   els.radiusSlider.value = String(cornerRadius);
   document.documentElement.style.setProperty("--radius", cornerRadius + "px");
@@ -1391,6 +1741,7 @@
     if (e.key !== "Escape") return;
     if (!els.previewOverlay.hidden) closePreview();
     if (!els.infoOverlay.hidden) els.infoOverlay.hidden = true;
+    if (!els.shareStoryOverlay.hidden) closeShareStory();
   });
 
   window.addEventListener("beforeunload", () => {
@@ -1417,6 +1768,7 @@
   window.addEventListener("resize", debounce(() => {
     if (currentView === "editor" && items.length) render();
     if (!els.previewOverlay.hidden) renderPreviewContent();
+    if (!els.shareStoryOverlay.hidden) buildShareStoryPreview();
   }, 150));
 
   showView();
