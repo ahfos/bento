@@ -22,6 +22,7 @@
     --mono-font: "SF Mono", "Menlo", "Consolas", monospace;
     --transition-fast: 180ms ease-out;
     --gap: 10px;
+    --radius: 10px;
   }
 
   html, body {
@@ -125,7 +126,7 @@
 
   .landing-inner { max-width: 26rem; width: 100%; }
 
-  .landing-mark svg { height: 4.4rem; width: auto; margin: 0 auto 1.6rem; display: block; }
+  .landing-mark svg { height: 7.5rem; width: auto; margin: 0 auto 1.8rem; display: block; }
 
   .landing-tagline {
     font-size: 0.92rem;
@@ -208,7 +209,26 @@
   .toolbar-right {
     display: flex;
     align-items: center;
+    gap: 1.1rem;
+  }
+
+  .radius-control {
+    display: flex;
+    align-items: center;
     gap: 0.5rem;
+  }
+  .radius-control label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .radius-control input[type="range"] {
+    width: 88px;
+    accent-color: var(--fg);
+    cursor: pointer;
   }
 
   /* ---------- grid (justified, ratio-preserving, no crop) ---------- */
@@ -228,9 +248,9 @@
   .tile {
     position: absolute;
     overflow: hidden;
-    border-radius: 10px;
+    border-radius: var(--radius, 10px);
     background: #f2f2f2;
-    transition: left 200ms ease-out, top 200ms ease-out, width 200ms ease-out, height 200ms ease-out;
+    transition: left 200ms ease-out, top 200ms ease-out, width 200ms ease-out, height 200ms ease-out, border-radius var(--transition-fast);
   }
 
   .tile img {
@@ -249,7 +269,7 @@
     position: absolute;
     inset: 0;
     border: 2px solid var(--accent);
-    border-radius: 10px;
+    border-radius: var(--radius, 10px);
     pointer-events: none;
   }
 
@@ -370,14 +390,15 @@
     left: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.6rem;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0 1.5rem;
     background: #ffffff;
     border-top: 1px solid var(--border-subtle);
   }
-  .brand-bar-logo { height: 20px; width: auto; display: block; }
+  .brand-bar-logo { height: 40px; width: auto; display: block; flex-shrink: 0; }
   .brand-bar-text {
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -491,6 +512,10 @@
           <button class="btn btn-ghost" id="addMoreBtn">+ Add images</button>
         </div>
         <div class="toolbar-right">
+          <div class="radius-control">
+            <label for="radiusSlider">Corners</label>
+            <input type="range" id="radiusSlider" min="0" max="40" step="1" value="10" aria-label="Tile corner radius">
+          </div>
           <button class="btn btn-primary" id="previewBtn">Preview</button>
         </div>
       </div>
@@ -536,15 +561,17 @@
   /* =========================================================
      CONSTANTS
      ========================================================= */
-  const BASE_H = 190;          // target height (px) for a "standard" tile
+  const BASE_H = 190;          // baseline height used only to decide row packing
   const GAP = 10;               // px, both within the grid and export
   const MAX_CANVAS_W = 1200;    // grid / export canvas caps out here
-  const BAR_H = 64;             // branded bottom bar height, baked into exports
+  const BAR_H = 88;             // branded bottom bar height, baked into exports
   const PAD = 40;               // outer padding around the preview/export canvas
-  // Apple-style asymmetry: one dominant hero, everything else clearly
-  // supporting. The gap between hero and the next-largest tier (tall)
-  // is intentionally wide so the hero reads as the obvious anchor.
-  const TYPE_MULT = { standard: 1, wide: 0.7, tall: 1.5, hero: 3 };
+  const DEFAULT_RADIUS = 10;    // default tile corner radius, user-adjustable
+  const PHI = 1.618033988749895; // golden ratio — drives the priority scale
+  // Apple-style asymmetry, golden-ratio scale: each tier up is ~PHI times
+  // more "important" than the one below it, so a hero pulls dramatically
+  // more weight than a tall/standard/wide tile when rows are packed.
+  const PRIORITY_WEIGHT = { standard: 1, wide: 1, tall: PHI, hero: PHI * PHI };
   const LOGO_VB = { w: 212, h: 401 };
   const LOGO_PATHS = [
     { d: "M38.689 48.3243H65.2758C69.9577 48.3243 73.8036 47.2096 76.8134 44.9801C79.8232 42.7506 81.3281 39.1276 81.3281 34.1113C81.3281 31.3244 80.8265 29.0392 79.8232 27.2556C78.8199 25.472 77.4822 24.0786 75.8101 23.0753C74.138 22.072 72.1872 21.4032 69.9577 21.0687C67.8397 20.6228 65.6102 20.3999 63.2692 20.3999H38.689V48.3243ZM12.4367 0H68.62C74.3052 0 79.4888 0.501637 84.1707 1.50491C88.8527 2.50818 92.8658 4.18031 96.21 6.52128C99.5542 8.75077 102.118 11.7606 103.902 15.5507C105.797 19.3409 106.744 24.0228 106.744 29.5966C106.744 35.6162 105.351 40.6326 102.564 44.6456C99.8887 48.6587 95.8756 51.9472 90.5248 54.5112C97.8821 56.6292 103.344 60.3636 106.912 65.7144C110.59 70.9537 112.43 77.3078 112.43 84.7766C112.43 90.7962 111.259 96.0355 108.918 100.495C106.577 104.842 103.4 108.409 99.387 111.196C95.4854 113.983 90.9707 116.045 85.8428 117.383C80.8265 118.721 75.6429 119.389 70.2921 119.389H12.4367V0ZM38.689 98.9896H66.7807C69.3446 98.9896 71.797 98.7667 74.138 98.3208C76.479 97.7634 78.5413 96.9273 80.3249 95.8126C82.1084 94.5864 83.5019 92.97 84.5051 90.9634C85.6199 88.9569 86.1773 86.393 86.1773 83.2717C86.1773 77.1405 84.4494 72.793 80.9937 70.2291C77.538 67.5537 72.9675 66.216 67.2823 66.216H38.689V98.9896Z", fill: "#000000" },
@@ -562,6 +589,7 @@
   let nextId = 1;
   let currentView = "landing"; // "landing" | "editor"
   let previewState = { outerWidth: 0, innerWidth: 0, layout: null };
+  let cornerRadius = DEFAULT_RADIUS;
 
   const els = {
     fileInput: document.getElementById("fileInput"),
@@ -580,6 +608,7 @@
     logoHomeBtn: document.getElementById("logoHomeBtn"),
     makeBentoBtn: document.getElementById("makeBentoBtn"),
     previewBtn: document.getElementById("previewBtn"),
+    radiusSlider: document.getElementById("radiusSlider"),
     previewOverlay: document.getElementById("previewOverlay"),
     previewScroll: document.getElementById("previewScroll"),
     previewCanvas: document.getElementById("previewCanvas"),
@@ -602,19 +631,29 @@
   }
 
   /* =========================================================
-     STEP B/C — pure placement.
-     No cropping anywhere: every tile's box is derived from the
-     image's own aspect ratio at a per-type target height, then
-     packed left-to-right into justified rows that never exceed
-     containerWidth (rows wrap automatically, like a masonry
-     gallery). Kept isolated from rendering so the heuristics
-     are easy to retune independently.
+     STEP B/C — pure placement: a weighted justified layout.
+     This is the same technique behind Google Photos' and Flickr's
+     galleries — the one well-established way to solve "fixed width,
+     zero empty space, no cropping" simultaneously:
+       1. Decide row membership by walking items in order and
+          accumulating a "claim" per item — its natural width at a
+          baseline height, inflated by a golden-ratio priority weight.
+          Higher-priority images claim more of a row's budget, so they
+          naturally end up sharing rows with fewer (or zero) neighbors.
+       2. Once a row's membership is fixed, solve for that row's real
+          height so the items' TRUE (unweighted) aspect ratios sum to
+          exactly containerWidth. Width is fixed by definition; height
+          is the derived, variable unknown — which is what guarantees
+          there is never a sliver of empty space, without distorting
+          or cropping a single image (uniform per-row scaling only).
+     Kept isolated from rendering so the heuristics are easy to retune
+     independently.
      ========================================================= */
   function getEffectiveTypes(orderedItems) {
     const map = new Map();
-    // Apple-style bento: one dominant hero (the first image), not two —
-    // everything else is a supporting tile unless the user pins more
-    // heroes manually via the size-cycle chip.
+    // Apple-style bento: one dominant hero (the first image) — everything
+    // else is a supporting tile unless the user pins more heroes manually
+    // via the size-cycle chip.
     const autoHeroIds = new Set();
     if (orderedItems.length) autoHeroIds.add(orderedItems[0].id);
     for (const it of orderedItems) {
@@ -629,91 +668,53 @@
     return map;
   }
 
-  function layoutRun(runItems, targetH, containerWidth, gap, startY, isLastRun) {
-    const naturalWidth = item => targetH * (item.naturalW / item.naturalH);
-
-    const rows = [];
-    let currentRow = [];
-    let currentRowWidth = 0;
-
-    runItems.forEach(item => {
-      const w = naturalWidth(item);
-      if (currentRow.length === 0) {
-        currentRow = [item];
-        currentRowWidth = w;
-        return;
-      }
-      const widthIfAdded = currentRowWidth + gap + w;
-      if (widthIfAdded > containerWidth) {
-        rows.push({ items: currentRow, scale: true });
-        currentRow = [item];
-        currentRowWidth = w;
-      } else {
-        currentRow.push(item);
-        currentRowWidth = widthIfAdded;
-      }
-    });
-    if (currentRow.length) rows.push({ items: currentRow, scale: false });
-    // The very last row of the very last run is left natural/ragged,
-    // like the trailing row of a justified gallery.
-    if (isLastRun && rows.length) rows[rows.length - 1].scale = false;
-
-    let y = startY;
-    const placed = [];
-    rows.forEach(row => {
-      const naturalWidths = row.items.map(naturalWidth);
-      const totalNatural = naturalWidths.reduce((a, b) => a + b, 0);
-      const totalGaps = gap * (row.items.length - 1);
-      let rowHeight = targetH;
-      let widths = naturalWidths;
-      // A row must never exceed containerWidth, even a natural/unscaled
-      // one-item row (e.g. a lone hero on a narrow screen) — force a
-      // shrink-to-fit in that case even though we don't force a stretch.
-      const mustShrink = (totalNatural + totalGaps) > containerWidth;
-      if ((row.scale || mustShrink) && totalNatural > 0) {
-        const scale = (containerWidth - totalGaps) / totalNatural;
-        rowHeight = targetH * scale;
-        widths = naturalWidths.map(w => w * scale);
-      }
-      // Center this row within containerWidth. Rows that were scaled to
-      // fill exactly already sit at x=0; natural/unscaled rows (a lone
-      // hero, a short trailing row, etc.) get centered instead of being
-      // left stuck against the edge.
-      const rowContentWidth = widths.reduce((a, b) => a + b, 0) + gap * (widths.length - 1);
-      let x = Math.max(0, (containerWidth - rowContentWidth) / 2);
-      row.items.forEach((item, i) => {
-        placed.push({ id: item.id, x, y, w: widths[i], h: rowHeight });
-        x += widths[i] + gap;
-      });
-      y += rowHeight + gap;
-    });
-
-    return { placed, endY: y };
-  }
-
   function computeJustifiedLayout(orderedItems, containerWidth) {
     const result = { placed: [], canvasWidth: containerWidth, canvasHeight: 0 };
     if (!orderedItems.length || containerWidth <= 0) return result;
 
     const typeMap = getEffectiveTypes(orderedItems);
+    const claimWidth = item => BASE_H * (item.naturalW / item.naturalH) * PRIORITY_WEIGHT[typeMap.get(item.id)];
 
-    // group into consecutive runs of the same type so each run can
-    // share one target row-height without ever needing to crop
-    const runs = [];
-    for (const it of orderedItems) {
-      const type = typeMap.get(it.id);
-      const last = runs[runs.length - 1];
-      if (last && last.type === type) last.items.push(it);
-      else runs.push({ type, items: [it] });
-    }
+    // Pass 1 — row membership, weighted by priority.
+    const rows = [];
+    let currentRow = [];
+    let currentClaim = 0;
+    orderedItems.forEach(item => {
+      const c = claimWidth(item);
+      if (currentRow.length === 0) {
+        currentRow = [item];
+        currentClaim = c;
+        return;
+      }
+      const claimIfAdded = currentClaim + GAP + c;
+      if (claimIfAdded > containerWidth) {
+        rows.push(currentRow);
+        currentRow = [item];
+        currentClaim = c;
+      } else {
+        currentRow.push(item);
+        currentClaim = claimIfAdded;
+      }
+    });
+    if (currentRow.length) rows.push(currentRow);
 
+    // Pass 2 — solve each row's real, unweighted height so its items'
+    // true aspect ratios sum to exactly containerWidth. Zero gaps,
+    // guaranteed by construction; total canvas height falls out of
+    // summing these variable row heights.
     let y = 0;
-    runs.forEach((run, i) => {
-      const targetH = BASE_H * (TYPE_MULT[run.type] || 1);
-      const { placed, endY } = layoutRun(run.items, targetH, containerWidth, GAP, y, i === runs.length - 1);
-      placed.forEach(p => { p.type = run.type; });
-      result.placed.push(...placed);
-      y = endY;
+    rows.forEach(row => {
+      const aspects = row.map(item => item.naturalW / item.naturalH);
+      const totalAspect = aspects.reduce((a, b) => a + b, 0);
+      const totalGaps = GAP * (row.length - 1);
+      const rowHeight = (containerWidth - totalGaps) / totalAspect;
+      let x = 0;
+      row.forEach((item, i) => {
+        const w = rowHeight * aspects[i];
+        result.placed.push({ id: item.id, x, y, w, h: rowHeight, type: typeMap.get(item.id) });
+        x += w + GAP;
+      });
+      y += rowHeight + GAP;
     });
 
     result.canvasHeight = Math.max(0, Math.round(y - GAP));
@@ -959,9 +960,9 @@
     bar.style.top = (PAD + layout.canvasHeight) + "px";
     bar.style.width = innerWidth + "px";
     bar.style.height = BAR_H + "px";
-    bar.innerHTML = '<svg class="brand-bar-logo" viewBox="0 0 212 401">' +
+    bar.innerHTML = '<span class="brand-bar-text">An Ahfos Initiative</span><svg class="brand-bar-logo" viewBox="0 0 212 401">' +
       LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") +
-      '</svg><span class="brand-bar-text">An Ahfos Initiative</span>';
+      '</svg>';
     els.previewCanvas.appendChild(bar);
   }
 
@@ -1014,32 +1015,43 @@
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(xOffset, y + 0.5); ctx.lineTo(xOffset + width, y + 0.5); ctx.stroke();
 
-    const logoH = Math.round(barHeight * 0.4);
-    const logoImg = await getLogoImage(logoH);
-    const logoW = logoImg.width;
-    const gapPx = Math.round(barHeight * 0.16);
-    const text = "AN AHFOS INITIATIVE";
-    const letterSpacing = Math.max(1, Math.round(barHeight * 0.03));
-    const fontSize = Math.round(barHeight * 0.19);
-    ctx.font = '700 ' + fontSize + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
-    ctx.textBaseline = "middle";
-
-    let textWidth = 0;
-    for (const ch of text) textWidth += ctx.measureText(ch).width + letterSpacing;
-    textWidth -= letterSpacing;
-
-    const groupWidth = logoW + gapPx + textWidth;
-    let cursorX = xOffset + (width - groupWidth) / 2;
+    const innerPad = Math.round(barHeight * 0.24);
     const centerY = y + barHeight / 2;
 
-    ctx.drawImage(logoImg, cursorX, centerY - logoH / 2, logoW, logoH);
-    cursorX += logoW + gapPx;
+    // BENTO mark, bottom-right, sized up so it reads clearly
+    const logoH = Math.round(barHeight * 0.58);
+    const logoImg = await getLogoImage(logoH);
+    const logoW = logoImg.width;
+    const logoX = xOffset + width - innerPad - logoW;
+    ctx.drawImage(logoImg, logoX, centerY - logoH / 2, logoW, logoH);
 
+    // "An Ahfos Initiative", bottom-left
+    const text = "AN AHFOS INITIATIVE";
+    const letterSpacing = Math.max(1, Math.round(barHeight * 0.024));
+    const fontSize = Math.round(barHeight * 0.15);
+    ctx.font = '700 ' + fontSize + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
+    ctx.textBaseline = "middle";
     ctx.fillStyle = "#888888";
+    let cursorX = xOffset + innerPad;
     for (const ch of text) {
       ctx.fillText(ch, cursorX, centerY + 1);
       cursorX += ctx.measureText(ch).width + letterSpacing;
     }
+  }
+
+  function roundedRectPath(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    if (typeof ctx.roundRect === "function") {
+      ctx.roundRect(x, y, w, h, r);
+      return;
+    }
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
   }
 
   async function buildExportCanvas() {
@@ -1061,9 +1073,14 @@
       const item = items.find(it => it.id === p.id);
       if (!item) continue;
       const img = await getLoadedImage(item);
+      const dx = (p.x + PAD) * scale, dy = (p.y + PAD) * scale, dw = p.w * scale, dh = p.h * scale;
       // full source image, scaled (never cropped) into its own box,
-      // offset by the outer padding
-      ctx.drawImage(img, (p.x + PAD) * scale, (p.y + PAD) * scale, p.w * scale, p.h * scale);
+      // offset by the outer padding, clipped to the user's corner radius
+      ctx.save();
+      roundedRectPath(ctx, dx, dy, dw, dh, cornerRadius * scale);
+      ctx.clip();
+      ctx.drawImage(img, dx, dy, dw, dh);
+      ctx.restore();
     }
 
     await drawBrandBar(ctx, PAD * scale, innerWidth * scale, (PAD + gridH) * scale, BAR_H * scale);
@@ -1076,46 +1093,27 @@
     canvas.toBlob(blob => downloadBlob(blob, "bento-grid.png"), "image/png");
   }
 
-  function measureSvgTextWidth(text, fontSize, weight, spacing) {
-    const svgNS = "http://www.w3.org/2000/svg";
-    const tempSvg = document.createElementNS(svgNS, "svg");
-    tempSvg.setAttribute("width", "0");
-    tempSvg.setAttribute("height", "0");
-    tempSvg.style.position = "absolute";
-    tempSvg.style.visibility = "hidden";
-    const t = document.createElementNS(svgNS, "text");
-    t.setAttribute("font-family", "Helvetica Neue, Helvetica, Arial, sans-serif");
-    t.setAttribute("font-size", fontSize);
-    t.setAttribute("font-weight", weight);
-    t.setAttribute("letter-spacing", spacing);
-    t.textContent = text;
-    tempSvg.appendChild(t);
-    document.body.appendChild(tempSvg);
-    let w;
-    try { w = t.getBBox().width; } catch (_) { w = text.length * fontSize * 0.62; }
-    document.body.removeChild(tempSvg);
-    return w;
-  }
-
   function buildBrandBarSVG(xOffset, width, y, barHeight) {
-    const logoH = Math.round(barHeight * 0.4);
+    const innerPad = Math.round(barHeight * 0.24);
+    const centerY = y + barHeight / 2;
+
+    // BENTO mark, bottom-right, sized up so it reads clearly
+    const logoH = Math.round(barHeight * 0.58);
     const logoW = Math.round(logoH * (LOGO_VB.w / LOGO_VB.h));
-    const gapPx = Math.round(barHeight * 0.16);
-    const text = "AN AHFOS INITIATIVE";
-    const fontSize = Math.round(barHeight * 0.19);
-    const letterSpacing = Math.max(1, Math.round(barHeight * 0.03));
-    const textWidth = measureSvgTextWidth(text, fontSize, 700, letterSpacing);
-    const groupWidth = logoW + gapPx + textWidth;
-    const startX = xOffset + (width - groupWidth) / 2;
     const logoScale = logoH / LOGO_VB.h;
-    const logoY = y + (barHeight - logoH) / 2;
-    const textX = startX + logoW + gapPx;
-    const textY = y + barHeight / 2;
+    const logoX = xOffset + width - innerPad - logoW;
+    const logoY = centerY - logoH / 2;
+
+    // "An Ahfos Initiative", bottom-left
+    const text = "AN AHFOS INITIATIVE";
+    const fontSize = Math.round(barHeight * 0.15);
+    const letterSpacing = Math.max(1, Math.round(barHeight * 0.024));
+    const textX = xOffset + innerPad;
 
     let s = '<line x1="' + xOffset + '" y1="' + (y + 0.5) + '" x2="' + (xOffset + width) + '" y2="' + (y + 0.5) + '" stroke="#e5e5e5" stroke-width="1"/>';
-    s += '<g transform="translate(' + startX + ',' + logoY + ') scale(' + logoScale + ')">' +
+    s += '<g transform="translate(' + logoX + ',' + logoY + ') scale(' + logoScale + ')">' +
       LOGO_PATHS.map(p => '<path d="' + p.d + '" fill="' + p.fill + '"/>').join("") + '</g>';
-    s += '<text x="' + textX + '" y="' + textY + '" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="' +
+    s += '<text x="' + textX + '" y="' + centerY + '" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="' +
       fontSize + '" font-weight="700" letter-spacing="' + letterSpacing +
       '" fill="#888888" dominant-baseline="middle">' + text + '</text>';
     return s;
@@ -1149,7 +1147,7 @@
       const dataUrl = imageToDataURL(item);
       const clipId = "clip" + p.id;
       const x = p.x + PAD, y = p.y + PAD;
-      parts.push('<clipPath id="' + clipId + '"><rect x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h + '" rx="10"/></clipPath>');
+      parts.push('<clipPath id="' + clipId + '"><rect x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h + '" rx="' + cornerRadius + '"/></clipPath>');
       parts.push('<image href="' + dataUrl + '" x="' + x + '" y="' + y + '" width="' + p.w + '" height="' + p.h +
         '" preserveAspectRatio="xMidYMid meet" clip-path="url(#' + clipId + ')"/>');
     }
@@ -1243,6 +1241,13 @@
       e.preventDefault();
       handleFiles(e.dataTransfer.files);
     }
+  });
+
+  els.radiusSlider.value = String(cornerRadius);
+  document.documentElement.style.setProperty("--radius", cornerRadius + "px");
+  els.radiusSlider.addEventListener("input", (e) => {
+    cornerRadius = Number(e.target.value);
+    document.documentElement.style.setProperty("--radius", cornerRadius + "px");
   });
 
   els.clearAllBtn.addEventListener("click", clearAll);
