@@ -612,14 +612,11 @@
      ========================================================= */
   function getEffectiveTypes(orderedItems) {
     const map = new Map();
+    // Apple-style bento: one dominant hero (the first image), not two —
+    // everything else is a supporting tile unless the user pins more
+    // heroes manually via the size-cycle chip.
     const autoHeroIds = new Set();
-    if (orderedItems.length) {
-      autoHeroIds.add(orderedItems[0].id);
-      const second = orderedItems.slice(1).find(
-        it => it.aspectClass === "square" || it.aspectClass === "landscape"
-      );
-      if (second) autoHeroIds.add(second.id);
-    }
+    if (orderedItems.length) autoHeroIds.add(orderedItems[0].id);
     for (const it of orderedItems) {
       let type;
       if (it.overrideType) type = it.overrideType; // manual pin always wins
